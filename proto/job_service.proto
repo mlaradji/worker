@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package int.backend.mohamed;
+
+option go_package = "github.com/mlaradji/int-backend-mohamed;pb";
+
+import "job_message.proto";
+
+message JobStartRequest { string command = 1; }
+
+message JobStartResponse { string job_id = 1; }
+
+message JobStopRequest { string job_id = 1; }
+
+message JobStopResponse { JobStatus job_status = 1; }
+
+message JobStatusRequest { string job_id = 1; }
+
+message JobStatusResponse { JobStatus job_status = 1; }
+
+message JobOutputRequest { string job_id = 1; }
+
+message JobOutputResponse {
+  JobStatus job_status = 1;
+  string job_output = 2;
+}
+
+message JobInfoRequest { string job_id = 1; }
+
+message JobInfoResponse {
+  JobInfo job_info = 1;
+  string job_output = 2;
+}
+
+message JobLogsRequest {
+  enum JobLogType {
+    UNKNOWN = 0;
+    STDOUT = 1;
+    STDERR = 2;
+  }
+  string job_id = 1;
+  JobLogType log_type = 2;
+}
+
+message JobLogsResponse {
+  JobStatus job_status = 1;
+  JobLog log = 2;
+}
+
+service LaptopService {
+  rpc JobStart(JobStartRequest) returns (JobStartResponse) {};
+  rpc JobStop(JobStopRequest) returns (JobStopResponse) {};
+  rpc JobStatus(JobStatusRequest) returns (JobStatusResponse) {};
+  rpc JobOutput(JobOutputRequest) returns (JobOutputResponse) {};
+  rpc JobInfo(JobInfoRequest) returns (JobInfoResponse) {};
+  rpc JobLogs(JobLogsRequest) returns (JobLogsResponse) {};
+  rpc JobLogsStream(JobLogsRequest) returns (stream JobLogsResponse) {};
+}

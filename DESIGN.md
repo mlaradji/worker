@@ -6,66 +6,101 @@ The Job Worker project aims to implement a gRPC API that allows authenticated cl
 # Design Approach
 ## Components
 ### 1. Worker Library
-With the worker library, a user can run a command, stop it, query its status and view its logs and output. The process will be executed as follows (in rough order):
-1. The process is started in a dedicated process group by setting the PGID.
-2. Three input channels are opened:
-    - A channel of type `bool`, to listen for input indicating normal process end.
-    - A channel of type `bool`, to listen for input indicating user-initiated stop request.
-    - A channel of type `os.Signal`, to listen for OS signals. When a `SIGTERM` signal is received, a `SIGKILL` is sent to the process group to ensure all child processes are killed too.
-3. Three output channels of type `string` are opened, which receive the final output/exit code, the STDOUT output, and the STDERR output, respectively.
+With the worker library, a user can run a command, stop it, query its status and info and view its logs and output, and list all jobs.
+
+The library stores job information in an in-memory job id to job object map, the Job Store. The job object contains job information, as well as job-related channels. 
+
+When the library is initialized, a Job Store and a message bus is created.
+
+When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The thread publishes the final output/exit code, the STDOUT output, and the STDERR output on dedicated message bus channels (`'<jobId>:output'`, `'<jobId>:stdout'`, `'<jobId>:stderr'`), and stores the log data in the Job Store along with the job status and the input channel objects.
+
+Reading a job's log is done directly from the Job Store. Streaming logs is done by subscribing to the appropriate message bus channel. 
+
+When the worker library receives a request to stop a job, it is forwarded to the Executing Thread of that job through the stop request channel. The Executing Thread then sends a `SIGKILL` signal to the process group using the PGID to ensure the job and all child processes are killed too.
+
 ### 2. gRPC API Daemon
+The daemon acts as an interface to the worker library, and exposes all of its functions over gRPC. The daemon also handles user authentication and authorization. The service definitions can be found in `proto/`.
+
 ### 3. Command-line Client
 The command-line client connects to the gRPC daemon and allows the user to interact with the worker library. The suggested command-line interface is as follows (in [docopt](http://docopt.org/) format):
 ```
 Usage:
   worker-cli [options] start -- <command>...
-  worker-cli [options] (stop|status|output) <jobId>
-  worker-cli [options] logs (all|stdout|stderr) <jobId> [--follow]
-  worker-cli [options] list (all|running|failed|cancelled|done)
+  worker-cli [options] (stop|status|info|output) <jobId>
+  worker-cli [options] logs (stdout|stderr) <jobId> [--follow]
+  worker-cli [options] list
   worker-cli -h | --help
   worker-cli --version
 
-Commands:
-  start     
 Options:
   -h --help             Show this screen.
   --version             Show version.
   --debug               Set log level to DEBUG.
   --address=<addr>      Server address and port [default: 0.0.0.0:8080]
-  --cert=<cert>         Client certificate for mTLS. [default: cert/client-cert.pem]
-  --key=<key>           Client key for mTLS. [default: cert/client-key.pem]
-  --ca=<ca>             Certificate authority certificate for the server for mTLS. [default: cert/ca-cert.pem]
+  --cert=<cert>         Path to the client certificate for mTLS. [default: cert/client-cert.pem]
+  --key=<key>           Path to the client key for mTLS. [default: cert/client-key.pem]
+  --ca=<ca>             Path to the CA certificate for the server for mTLS. [default: cert/ca-cert.pem]
+
+Commands:
+  start     Start a new job for the input command. If successful, the new job id will be printed.
+  stop      Stop a job. No error is emitted if job is already done or stopped.
+  status    Query the status of a job. The status of a job is one of running|succeeded|failed|stopped.
+  info      Return all information that the server has on a job.
+  output    Print the exit code and final output of a job command.
+  logs      Print STDOUT or STDERR logs of a job.
+  list      List all jobs.
 ```
 For example,
 ```bash
-worker-cli start -- sh -c "/bin/bash" # Executes the command `sh -c "/bin/bash"` in a new job. This should print 
-worker-cli 
+# Executes the command `sh -c "/bin/bash"` in a new job. This prints the new job id.
+worker-cli start -- sh -c "/bin/bash" # output: 5a2e
+
+# Stop the job with id 5a2e. This blocks until the job is no longer running, and outputs either an error or the job's current status.
+worker-cli stop 5a2e # output: stopped
+
+# Stream STDOUT logs for 5a2e. This is blocking if job is still running.
+worker-cli logs stdout 5a2e --follow
+```
+
+### Authentication
+The project uses mTLS, and only TLS 1.3 is accepted for authentication. The allowed cipher suites are:
+```
+	TLS_CHACHA20_POLY1305_SHA256
+	TLS_AES_256_GCM_SHA384
+	TLS_AES_128_GCM_SHA256
+```
+
+The projects uses X.509 certificates, with 4096-bit RSA encryption, SHA256 signature, and the X509v3 Subject Alternative Name extension. A new self-signed Certificate Authority will be created solely for the project, and the server and client certificates will be newly created and signed by the CA. All certificates and keys will be stored unencrypted and pushed to the repository.
+
+### Authorization
+Authorization relies on the signature of client certificates. When a client connects, their certificate signature is checked against a hard-coded table of roles and signatures. The available roles are:
+- `LOG`: allows the user to list jobs, and query their status, output and logs,
+- `FULL`: allows the user full access to all functions of the API.
+
+For example, with the following role table,
+```
+FULL:
+  - aaaaaaaaaaaaaaaa # signature of client A cert
+  - bbbbbbbbbbbbbbbb # signature of client B cert
+
+LOG:
+  - cccccccccccccccc # signature of client C cert
+```
+clients A and B are given full access to the API, while client C is only allowed to list jobs and query their status, output and logs. Clients with signatures not in either role will not have any access to the API.
 
 ## Trade-offs
 1. The API does not sanitize the user's inputted commands before execution, and it does not sandbox the executed process in any way. This means that the user can purposefully or inadvertently cause severe damage to the API host.
-2. The worker library will use in-memory storage to keep track of launched processes. This means potentially high RAM usage, and no persistence. In production, it would probably be best to use an external database.
-
-# Milestones/
-## 1. Implement interfaces
-Create the schema for the various types of variables that the worker library will handle. As a start, there should be a “Command” interface, that has the name of the process to execute and its arguments, and a “Job” interface, with “Status”, “JobId”, “PID” (or some way of tracking the Linux process), “StartDate”, “FinishDate”, “Stdout”, “Stderr”, and “ExitStatus”. New interfaces might be added and current ones modified if needed for the later stages.
-## 2. Implement the core worker library
-The core worker library will be used by the API. Given a single command, it should be able to start and stop it, retrieve its status (started/finished/error), and retrieve its logs and final output. It should be able to wait on a process until its done or errored, and then fill in the Job object details and return it.
-## 3. Implement job orchestration
-The library should be able to handle multiple running jobs at the same time. This will be done through a global thread-safe map of string (jobId) to Job object. Each time a job is created, a goroutine will launch the core worker library implemented in 2, and continuously update the relevant Job object until its done.
-## 4. Implement HTTPS API with basic authentication
-The API will expose four paths over REST:
-‘/health/’: GET path - health check.
-‘/start/’: POST path with body request schema `{“command”: “string”, “args”: “[string]”}` and response schema `{“status”: “running | error”, “jobId”: “string”, “error”: “string | null”}`. Starts a command. Errors if unable to schedule the process.
-‘/stop/’: POST path with body request schema `{“jobId”: “string”}` and response schema `{“status”: “success | error”, “error”: “string | null”}`. Stops a running command. Errors if the process is already stopped.
-‘/status/{jobId}’: GET path with `jobId` path parameter and response schema `{“status”: “success | error”, “error”: “string | null”, “jobStatus”: “string | null”}`.
-Additionally, the last 3 paths will only succeed if the request has the appropriate authentication headers.
-## 5. Implement client library
-Expose the same paths in the previous milestone as shell commands: `--health`, `--start`, `--stop`, `--status`.
-## 6. Implement tests
-Add a test that runs a quick command with known output (such as `cat test`), checks that the response schema/object is valid, grab the status of the job and check the response.
-## 7. Implement mTLS authentication
-## 8. Implement GRPC API
-## 9. Implement streaming of logs for client and GRPC
+2. The worker library uses in-memory storage to keep track of launched processes. This means potentially high RAM usage and no persistence. In production, it would probably be best to use an external database.
+3. The gRPC daemon only accepts TLS 1.3 ciphers for encryption and authentication. This choice might affect client compatibility.
+4. For mTLS authorization, a hard-coded list of client signatures and roles will be used. Ideally, the server should either allow an administrator user to add and remove signatures and roles, or rely on a third-party authorization server.
+5. The mTLS certificate authority will be self-signed, the certificates will be created and stored locally, and all keys and certificates will be unencrypted and pushed to the repository. This is a security risk.
 
 ## Edge Cases
+1. Starting too many jobs too quickly can cause the OS to spend a lot of time on system calls.
+2. If the CLI is used to run another instance of the CLI that runs a command, stopping the job may not work as expected. Similarly, the CLI could be used to stop the server, which might cause orphan threads.
+
+# Milestones
+## 1. Implement the worker library with tests
+## 2. Implement the gRPC server with tests
+## 3. Implement the gRPC CLI with tests
 
