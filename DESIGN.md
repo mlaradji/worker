@@ -51,8 +51,8 @@ For example,
 # Executes the command `sh -c "/bin/bash"` in a new job. This prints the new job id.
 worker-cli start -- sh -c "/bin/bash" # output: 5a2e
 
-# Stop the job with id 5a2e. This blocks until the job is no longer running, and outputs either an error or the job's current status.
-worker-cli stop 5a2e # output: stopped
+# Stop the job with id 5a2e. This blocks until the job is no longer running.
+worker-cli stop 5a2e # no output if successful
 
 # Stream STDOUT logs for 5a2e. This is blocking if job is still running.
 worker-cli logs stdout 5a2e --follow

@@ -14,11 +14,7 @@ message JobStartResponse {
 
 message JobStopRequest { string job_id = 1; }
 
-message JobStopResponse {
-  JobStatus job_status =
-      1; // The status returned is STOPPED if stopped by user, and FAILED or
-         // SUCCEEDED if the job was already finished.
-}
+message JobStopResponse {}
 
 message JobStatusRequest { string job_id = 1; }
 
@@ -34,10 +30,7 @@ message JobLogsRequest {
   JobLogType log_type = 2;
 }
 
-message JobLogsResponse {
-  JobStatus job_status = 1;
-  JobLog log = 2;
-}
+message JobLogsResponse { JobLog log = 1; }
 
 service JobService {
   rpc JobStart(JobStartRequest) returns (JobStartResponse) {};
