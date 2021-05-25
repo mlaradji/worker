@@ -8,29 +8,21 @@ import "job_message.proto";
 
 message JobStartRequest { string command = 1; }
 
-message JobStartResponse { string job_id = 1; }
+message JobStartResponse {
+  string job_id = 1; // The server generates and returns a random UUIDv4
+}
 
 message JobStopRequest { string job_id = 1; }
 
-message JobStopResponse { JobStatus job_status = 1; }
+message JobStopResponse {
+  JobStatus job_status =
+      1; // The status returned is STOPPED if stopped by user, and FAILED or
+         // SUCCEEDED if the job was already finished.
+}
 
 message JobStatusRequest { string job_id = 1; }
 
-message JobStatusResponse { JobStatus job_status = 1; }
-
-message JobOutputRequest { string job_id = 1; }
-
-message JobOutputResponse {
-  JobStatus job_status = 1;
-  string job_output = 2;
-}
-
-message JobInfoRequest { string job_id = 1; }
-
-message JobInfoResponse {
-  JobInfo job_info = 1;
-  string job_output = 2;
-}
+message JobStatusResponse { JobInfo job_info = 1; }
 
 message JobLogsRequest {
   enum JobLogType {
@@ -47,12 +39,14 @@ message JobLogsResponse {
   JobLog log = 2;
 }
 
-service LaptopService {
+message JobListRequest {}
+
+message JobListResponse { JobList job_list = 1; }
+
+service JobService {
   rpc JobStart(JobStartRequest) returns (JobStartResponse) {};
   rpc JobStop(JobStopRequest) returns (JobStopResponse) {};
   rpc JobStatus(JobStatusRequest) returns (JobStatusResponse) {};
-  rpc JobOutput(JobOutputRequest) returns (JobOutputResponse) {};
-  rpc JobInfo(JobInfoRequest) returns (JobInfoResponse) {};
-  rpc JobLogs(JobLogsRequest) returns (JobLogsResponse) {};
   rpc JobLogsStream(JobLogsRequest) returns (stream JobLogsResponse) {};
+  rpc JobList(JobListRequest) returns (JobListResponse) {};
 }

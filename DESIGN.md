@@ -8,11 +8,11 @@ The Job Worker project aims to implement a gRPC API that allows authenticated cl
 ### 1. Worker Library
 With the worker library, a user can run a command, stop it, query its status and info and view its logs and output, and list all jobs.
 
-The library stores job information in an in-memory job id to job object map, the Job Store. The job object contains job information, as well as job-related channels. 
+The library stores job information in an in-memory job id to job object map, the Job Store. The job object contains job information, as well as job-related channels. The job id is a randomly generated UUIDv4.
 
 When the library is initialized, a Job Store and a message bus is created.
 
-When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The thread publishes the final output/exit code, the STDOUT output, and the STDERR output on dedicated message bus channels (`'<jobId>:output'`, `'<jobId>:stdout'`, `'<jobId>:stderr'`), and stores the log data in the Job Store along with the job status and the input channel objects.
+When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The thread publishes the exit code, the STDOUT output, and the STDERR output on dedicated message bus channels (`'<jobId>:output'`, `'<jobId>:stdout'`, `'<jobId>:stderr'`), and stores the log data in the Job Store along with the job status and the input channel objects.
 
 Reading a job's log is done directly from the Job Store. Streaming logs is done by subscribing to the appropriate message bus channel. 
 
@@ -26,8 +26,8 @@ The command-line client connects to the gRPC daemon and allows the user to inter
 ```
 Usage:
   worker-cli [options] start -- <command>...
-  worker-cli [options] (stop|status|info|output) <jobId>
-  worker-cli [options] logs (stdout|stderr) <jobId> [--follow]
+  worker-cli [options] (stop|status) <jobId>
+  worker-cli [options] logs (stdout|stderr) <jobId>
   worker-cli [options] list
   worker-cli -h | --help
   worker-cli --version
@@ -44,10 +44,8 @@ Options:
 Commands:
   start     Start a new job for the input command. If successful, the new job id will be printed.
   stop      Stop a job. No error is emitted if job is already done or stopped.
-  status    Query the status of a job. The status of a job is one of running|succeeded|failed|stopped.
-  info      Return all information that the server has on a job.
-  output    Print the exit code and final output of a job command.
-  logs      Print STDOUT or STDERR logs of a job.
+  status    Query the status and other information of a job. The status of a job is one of running|succeeded|failed|stopped.
+  logs      Follow STDOUT or STDERR logs of a job.
   list      List all jobs.
 ```
 For example,
@@ -70,23 +68,23 @@ The project uses mTLS, and only TLS 1.3 is accepted for authentication. The allo
 	TLS_AES_128_GCM_SHA256
 ```
 
-The projects uses X.509 certificates, with 4096-bit RSA encryption, SHA256 signature, and the X509v3 Subject Alternative Name extension. A new self-signed Certificate Authority will be created solely for the project, and the server and client certificates will be newly created and signed by the CA. All certificates and keys will be stored unencrypted and pushed to the repository.
+The projects uses X.509v3 certificates, with 4096-bit RSA encryption, SHA256 signature, and the X.509v3 Subject Alternative Name extension. A new self-signed Certificate Authority will be created solely for the project, and the server and client certificates will be newly created and signed by the CA. All certificates and keys will be stored unencrypted and pushed to the repository.
 
 ### Authorization
-Authorization relies on the signature of client certificates. When a client connects, their certificate signature is checked against a hard-coded table of roles and signatures. The available roles are:
-- `LOG`: allows the user to list jobs, and query their status, output and logs,
+Authorization relies on the SHA256 fingerprint of client certificates. After a client successfully authenticates, their entire raw certificate is hashed through SHA256 to produce a fingerprint. The fingerprint is checked against a hard-coded table of roles and fingerprints. The available roles are:
+- `LOG`: allows the user to list jobs and query their status,
 - `FULL`: allows the user full access to all functions of the API.
 
 For example, with the following role table,
 ```
 FULL:
-  - aaaaaaaaaaaaaaaa # signature of client A cert
-  - bbbbbbbbbbbbbbbb # signature of client B cert
+  - aaaaaaaaaaaaaaaa # fingerprint of client A cert
+  - bbbbbbbbbbbbbbbb # fingerprint of client B cert
 
 LOG:
-  - cccccccccccccccc # signature of client C cert
+  - cccccccccccccccc # fingerprint of client C cert
 ```
-clients A and B are given full access to the API, while client C is only allowed to list jobs and query their status, output and logs. Clients with signatures not in either role will not have any access to the API.
+clients A and B are given full access to the API, while client C is only allowed to list jobs and query their status. Clients with fingerprint not in either role will not have any access to the API. Clients in both roles will have the `FULL` role.
 
 ## Trade-offs
 1. The API does not sanitize the user's inputted commands before execution, and it does not sandbox the executed process in any way. This means that the user can purposefully or inadvertently cause severe damage to the API host.
