@@ -6,7 +6,7 @@ The Job Worker project aims to implement a gRPC API that allows authenticated cl
 # Design Approach
 ## Components
 ### 1. Worker Library
-With the worker library, a user can run a command, stop it, query its status and info and view its logs and output, and list all jobs.
+With the worker library, a user can run a command, stop it, query its status and info and view its logs and output.
 
 The library stores job information in an in-memory job id to job object map, the Job Store. The job object contains job information, as well as job-related channels. The job id is a randomly generated UUIDv4.
 
@@ -28,7 +28,6 @@ Usage:
   worker-cli [options] start -- <command>...
   worker-cli [options] (stop|status) <jobId>
   worker-cli [options] logs (stdout|stderr) <jobId>
-  worker-cli [options] list
   worker-cli -h | --help
   worker-cli --version
 
@@ -46,7 +45,6 @@ Commands:
   stop      Stop a job. No error is emitted if job is already done or stopped.
   status    Query the status and other information of a job. The status of a job is one of running|succeeded|failed|stopped.
   logs      Follow STDOUT or STDERR logs of a job.
-  list      List all jobs.
 ```
 For example,
 ```bash
@@ -72,7 +70,7 @@ The projects uses X.509v3 certificates, with 4096-bit RSA encryption, SHA256 sig
 
 ### Authorization
 Authorization relies on the SHA256 fingerprint of client certificates. After a client successfully authenticates, their entire raw certificate is hashed through SHA256 to produce a fingerprint. The fingerprint is checked against a hard-coded table of roles and fingerprints. The available roles are:
-- `LOG`: allows the user to list jobs and query their status,
+- `LOG`: allows the user to query job status and logs,
 - `FULL`: allows the user full access to all functions of the API.
 
 For example, with the following role table,
@@ -84,7 +82,7 @@ FULL:
 LOG:
   - cccccccccccccccc # fingerprint of client C cert
 ```
-clients A and B are given full access to the API, while client C is only allowed to list jobs and query their status. Clients with fingerprint not in either role will not have any access to the API. Clients in both roles will have the `FULL` role.
+clients A and B are given full access to the API, while client C is only allowed to query job status and logs. Clients with fingerprint not in either role will not have any access to the API. Clients in both roles will have the `FULL` role.
 
 ## Trade-offs
 1. The API does not sanitize the user's inputted commands before execution, and it does not sandbox the executed process in any way. This means that the user can purposefully or inadvertently cause severe damage to the API host.

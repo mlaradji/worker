@@ -39,14 +39,9 @@ message JobLogsResponse {
   JobLog log = 2;
 }
 
-message JobListRequest {}
-
-message JobListResponse { JobList job_list = 1; }
-
 service JobService {
   rpc JobStart(JobStartRequest) returns (JobStartResponse) {};
   rpc JobStop(JobStopRequest) returns (JobStopResponse) {};
   rpc JobStatus(JobStatusRequest) returns (JobStatusResponse) {};
   rpc JobLogsStream(JobLogsRequest) returns (stream JobLogsResponse) {};
-  rpc JobList(JobListRequest) returns (JobListResponse) {};
 }

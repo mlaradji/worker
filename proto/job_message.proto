@@ -31,7 +31,3 @@ enum JobStatus {
   FAILED = 4;    // The job finished with a non-zero exit code, or there was a
                  // server error in processing the job.
 }
-
-message JobList {
-  repeated JobInfo job_info = 1;
-}
