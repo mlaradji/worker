@@ -12,7 +12,7 @@ The library stores job information in an in-memory job id to job object map, the
 
 When the library is initialized, a Job Store and a message bus is created.
 
-When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The thread publishes the exit code, the STDOUT output, and the STDERR output on dedicated message bus channels (`'<jobId>:output'`, `'<jobId>:stdout'`, `'<jobId>:stderr'`), and stores the log data in the Job Store along with the job status and the input channel objects.
+When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The STDOUT output and the STDERR output from the executed command are, as they come, published on the same message bus channel `'<jobId>:logs'`, and stored combined in the Job Store. After the process ends, the thread publishes the exit code on the message bus channel `'<jobId>:exit'`, and updates the exit code and job status in the Job Store.
 
 Reading a job's log is done directly from the Job Store. Streaming logs is done by subscribing to the appropriate message bus channel. 
 

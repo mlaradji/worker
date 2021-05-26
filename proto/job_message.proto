@@ -17,17 +17,11 @@ message JobInfo {
   google.protobuf.Timestamp finished_at = 7;
 }
 
-message JobLog {
-  oneof log {
-    string stdout = 1;
-    string stderr = 2;
-  }
-}
-
 enum JobStatus {
-  UNKNOWN = 0;   // Default value.
-  RUNNING = 1;   // The job is still running.
-  STOPPED = 2;   // The job was stopped by a user.
+  UNKNOWN = 0; // Sanity check. Make sure that the JobStatus was explicitly set
+               // and not just a default value. ?: Is this useful?
+  RUNNING = 1; // The job is still running.
+  STOPPED = 2; // The job was stopped by a user.
   SUCCEEDED = 3; // The job finished with a zero exit code.
   FAILED = 4;    // The job finished with a non-zero exit code, or there was a
                  // server error in processing the job.
