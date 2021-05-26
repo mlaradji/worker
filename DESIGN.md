@@ -69,20 +69,20 @@ The project uses mTLS, and only TLS 1.3 is accepted for authentication. The allo
 The projects uses X.509v3 certificates, with 4096-bit RSA encryption, SHA256 signature, and the X.509v3 Subject Alternative Name extension. A new self-signed Certificate Authority will be created solely for the project, and the server and client certificates will be newly created and signed by the CA. All certificates and keys will be stored unencrypted and pushed to the repository.
 
 ### Authorization
-Authorization relies on the SHA256 fingerprint of client certificates. After a client successfully authenticates, their entire raw certificate is hashed through SHA256 to produce a fingerprint. The fingerprint is checked against a hard-coded table of roles and fingerprints. The available roles are:
-- `LOG`: allows the user to query job status and logs,
-- `FULL`: allows the user full access to all functions of the API.
+Authorization relies on a colon separated combination of the client certificate's Serial Number, and the certificate authority's Subject (as `<cert_serial_no>:<ca_subject>`), which will be called the Client ID. After a client successfully authenticates, their Client ID is checked against a hard-coded table of roles and ids. The available roles are:
+- `USER`: allows the client to start new jobs, and stop jobs that they started and view status and logs of jobs that they started.
+- `ADMIN`: allows the client to start jobs, stop any job, and to query job status and logs for any job.
 
 For example, with the following role table,
 ```
-FULL:
-  - aaaaaaaaaaaaaaaa # fingerprint of client A cert
-  - bbbbbbbbbbbbbbbb # fingerprint of client B cert
+ADMIN:
+  - 0:InternalCA # client id for A
+  - 1:InternalCA # client id for B
 
-LOG:
-  - cccccccccccccccc # fingerprint of client C cert
+USER:
+  - 2:InternalCA # client id for C
 ```
-clients A and B are given full access to the API, while client C is only allowed to query job status and logs. Clients with fingerprint not in either role will not have any access to the API. Clients in both roles will have the `FULL` role.
+clients A and B can start, stop, view status of, and view logs for any job without any restrictions. Client C is only allowed to start jobs, stop their own jobs and query job status and logs for their own jobs. Clients not in either role will not have any access to the API. Clients in both roles will have the `ADMIN` role.
 
 ## Trade-offs
 1. The API does not sanitize the user's inputted commands before execution, and it does not sandbox the executed process in any way. This means that the user can purposefully or inadvertently cause severe damage to the API host.
@@ -94,6 +94,7 @@ clients A and B are given full access to the API, while client C is only allowed
 ## Edge Cases
 1. Starting too many jobs too quickly can cause the OS to spend a lot of time on system calls.
 2. If the CLI is used to run another instance of the CLI that runs a command, stopping the job may not work as expected. Similarly, the CLI could be used to stop the server, which might cause orphan threads.
+3. Although clients with only role `USER` cannot stop or view logs for jobs started by other users by using the job id, they can start a command that kills another user's job or outputs its logs.
 
 # Milestones
 ## 1. Implement the worker library with tests

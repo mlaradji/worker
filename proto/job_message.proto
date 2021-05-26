@@ -7,13 +7,14 @@ option go_package = "github.com/mlaradji/int-backend-mohamed;pb";
 import "google/protobuf/timestamp.proto";
 
 message JobInfo {
-  string id = 1;
-  string command = 2;
-  JobStatus job_status = 3;
-  uint32 exit_code = 4;
+  string id = 1;      // a uuid
+  string user_id = 2; // id of the user who started the job
+  string command = 3;
+  JobStatus job_status = 4;
+  uint32 exit_code = 5;
 
-  google.protobuf.Timestamp created_at = 5;
-  google.protobuf.Timestamp finished_at = 6;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
 }
 
 message JobLog {
