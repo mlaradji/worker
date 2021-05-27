@@ -10,11 +10,9 @@ With the worker library, a user can run a command, stop it, query its status and
 
 The library stores job information in an in-memory job id to job object map, the Job Store. The job object contains job information, as well as job-related channels. The job id is a randomly generated UUIDv4.
 
-When the library is initialized, a Job Store and a message bus is created.
+When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The STDOUT output and the STDERR output from the executed command are appended to the local file `jobs/<userId>/<jobId>/output.log`. After the process ends, the thread publishes the exit code on the message bus channel `'<jobId>:exit'`, and updates the exit code and job status in the Job Store.
 
-When the worker library receives a request to run a command (by calling the appropriate library method), it starts an Executing Thread that executes the command in a dedicated process group by setting the PGID. The new thread opens several channels to listen for input indicating normal process end, a user-initiated stop request, and OS signals. The STDOUT output and the STDERR output from the executed command are, as they come, published on the same message bus channel `'<jobId>:logs'`, and stored combined in the Job Store. After the process ends, the thread publishes the exit code on the message bus channel `'<jobId>:exit'`, and updates the exit code and job status in the Job Store.
-
-Reading a job's log is done directly from the Job Store. Streaming logs is done by subscribing to the appropriate message bus channel. 
+The log streaming method subscribes to the message bus channel `'<jobId>:exit'` and watches the local log file `jobs/<userId>/<jobId>/output.log` for changes. The method reads the log file in chunks, remembering the file offset at each iteration. The method returns when the exit code is received on the `'<jobId>:exit'` channel and the end of the log file is reached.
 
 When the worker library receives a request to stop a job, it is forwarded to the Executing Thread of that job through the stop request channel. The Executing Thread then sends a `SIGKILL` signal to the process group using the PGID to ensure the job and all child processes are killed too.
 
