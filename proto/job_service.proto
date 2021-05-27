@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package int.backend.mohamed;
+
+option go_package = "github.com/mlaradji/int-backend-mohamed;pb";
+
+import "job_message.proto";
+
+message JobStartRequest { string command = 1; }
+
+message JobStartResponse {
+  string job_id = 1; // The server generates and returns a random UUIDv4
+}
+
+message JobStopRequest { string job_id = 1; }
+
+message JobStopResponse {}
+
+message JobStatusRequest { string job_id = 1; }
+
+message JobStatusResponse { JobInfo job_info = 1; }
+
+message JobLogsRequest { string job_id = 1; }
+
+message JobLogsResponse { bytes log = 1; }
+
+service JobService {
+  rpc JobStart(JobStartRequest) returns (JobStartResponse) {};
+  rpc JobStop(JobStopRequest) returns (JobStopResponse) {};
+  rpc JobStatus(JobStatusRequest) returns (JobStatusResponse) {};
+  rpc JobLogsStream(JobLogsRequest) returns (stream JobLogsResponse) {};
+}
