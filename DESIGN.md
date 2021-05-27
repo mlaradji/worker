@@ -27,7 +27,7 @@ The command-line client connects to the gRPC daemon and allows the user to inter
 Usage:
   worker-cli [options] start -- <command>...
   worker-cli [options] (stop|status) <jobId>
-  worker-cli [options] logs (stdout|stderr) <jobId>
+  worker-cli [options] logs <jobId>
   worker-cli -h | --help
   worker-cli --version
 
@@ -44,7 +44,7 @@ Commands:
   start     Start a new job for the input command. If successful, the new job id will be printed.
   stop      Stop a job. No error is emitted if job is already done or stopped.
   status    Query the status and other information of a job. The status of a job is one of running|succeeded|failed|stopped.
-  logs      Follow STDOUT or STDERR logs of a job.
+  logs      Follow logs (STDOUT+STDERR) of a job.
 ```
 For example,
 ```bash
@@ -54,8 +54,8 @@ worker-cli start -- sh -c "/bin/bash" # output: 5a2e
 # Stop the job with id 5a2e. This blocks until the job is no longer running.
 worker-cli stop 5a2e # no output if successful
 
-# Stream STDOUT logs for 5a2e. This is blocking if job is still running.
-worker-cli logs stdout 5a2e --follow
+# Stream logs for 5a2e. This is blocking if job is still running.
+worker-cli logs 5a2e
 ```
 
 ### Authentication
