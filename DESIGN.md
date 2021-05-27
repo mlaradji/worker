@@ -42,7 +42,7 @@ Options:
 Commands:
   start     Start a new job for the input command. If successful, the new job id will be printed.
   stop      Stop a job. No error is emitted if job is already done or stopped.
-  status    Query the status and other information of a job. The status of a job is one of running|succeeded|failed|stopped.
+  status    Query the status and other information of a job. The status of a job is one of created|running|succeeded|failed|stopped.
   logs      Follow logs (STDOUT+STDERR) of a job.
 ```
 For example,

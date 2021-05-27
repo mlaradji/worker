@@ -18,9 +18,8 @@ message JobInfo {
 }
 
 enum JobStatus {
-  UNKNOWN = 0; // Sanity check. Make sure that the JobStatus was explicitly set
-               // and not just a default value. ?: Is this useful?
-  RUNNING = 1; // The job is still running.
+  CREATED = 0; // The job was created but not run yet.
+  RUNNING = 1; // The job is currently running.
   STOPPED = 2; // The job was stopped by a user.
   SUCCEEDED = 3; // The job finished with a zero exit code.
   FAILED = 4;    // The job finished with a non-zero exit code, or there was a
