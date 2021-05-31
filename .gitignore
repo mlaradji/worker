@@ -25,3 +25,5 @@
 
 # Temporary storage for data and test output
 tmp/
+
+*.bak

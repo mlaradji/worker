@@ -4,23 +4,25 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
-	evbus "github.com/asaskevich/EventBus"
 	"github.com/mlaradji/int-backend-mohamed/pb"
 	log "github.com/sirupsen/logrus"
 )
 
-var ErrJobDoesNotExist = errors.New("the job id and user id combination does not exist")
+var (
+	ErrJobDoesNotExist = errors.New("the job id and user id combination does not exist")
+	NEWLINE            = []byte("\n")
+)
 
 // JobStore stores Job objects, keyed by JobKey (jobId+userId).
 type JobStore struct {
 	Job *sync.Map // Job is a thread-safe `map[JobKey]Job`.
-	Bus evbus.Bus // Bus is an event bus to which exit codes will be published at process end.
 }
 
 // NewStore initializes a new job store.
 func NewJobStore() *JobStore {
-	return &JobStore{Job: &sync.Map{}, Bus: evbus.New()}
+	return &JobStore{Job: &sync.Map{}}
 }
 
 // AddJob initializes a new job, creates log directories for it and adds it to the store.
@@ -53,7 +55,7 @@ func (store *JobStore) LoadJob(jobKey JobKey) (Job, error) {
 		return Job{}, ErrJobDoesNotExist
 	}
 
-	job, valid := jobInterface.(Job) // FIXME: this will be a wrong reference?
+	job, valid := jobInterface.(Job)
 	if !valid {
 		return Job{}, errors.New("job was found but it is invalid")
 	}
@@ -91,7 +93,7 @@ func (store *JobStore) StartJob(job Job) error {
 
 		// Wait for the command to finish
 		stopped, err := group.Wait()
-		log.Info(err)
+		job.FinishedAt = time.Now()
 
 		// update job status and exit code
 		if stopped {
@@ -105,10 +107,54 @@ func (store *JobStore) StartJob(job Job) error {
 		}
 		exitCode := int32(group.Cmd.ProcessState.ExitCode())
 		job.ExitCode = exitCode
+
+		// save job
 		store.Job.Store(job.Key, job)
 
 		job.WaitGroup.Done() // release goroutines waiting for the job to finish
 	}()
 
 	return nil
+}
+
+// JobFollowLog follows content of job's log file and sends to the returned channel. This method blocks until the log file is completely read and the job is not running.
+func (store *JobStore) JobFollowLog(job Job) (<-chan []byte, error) {
+	logger := log.WithFields(log.Fields{"func": "JobStore.JobFollowLog", "jobKey": job.Key, "LogFilepath": job.LogFilepath()})
+
+	followDone := make(chan bool) // this is closed when the log file has been completely read and the job is not running
+
+	logChannel, err := TailFollowFile(followDone, job.LogFilepath())
+	if err != nil {
+		logger.WithError(err).Error("unable to tail logfile")
+		return nil, err
+	}
+
+	// initialize output channel
+	outputChan := make(chan []byte)
+
+	// send lines to channel
+	go func() {
+		defer close(outputChan)
+
+	ForLoop:
+		for {
+			select {
+			case chunk, ok := <-logChannel:
+				outputChan <- chunk
+				if !ok {
+					return
+				}
+			case <-job.NotRunning():
+				close(followDone)
+				break ForLoop
+			}
+		}
+
+		// send remaining contents
+		for chunk := range logChannel {
+			outputChan <- chunk
+		}
+	}()
+
+	return outputChan, nil
 }

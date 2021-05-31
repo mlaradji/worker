@@ -40,21 +40,26 @@ func (job *Job) LogDirectory() string {
 	return filepath.Join("tmp", "jobs", job.Key.UserId, job.Key.JobId)
 }
 
-// Stop sends a signal to the StopChannel, which should trigger the job to stop. No error is returned if the job is not running.
-func (job *Job) Stop() {
-	logger := log.WithFields(log.Fields{"func": "Job.Stop", "jobKey": job.Key})
-
-	notRunning := make(chan bool, 1)
+// NotRunning returns a channel that receives a value if and only if the job is not running.
+func (job *Job) NotRunning() <-chan bool {
+	notRunning := make(chan bool)
 
 	go func() {
 		job.WaitGroup.Wait()
 		notRunning <- true
 	}()
 
+	return notRunning
+}
+
+// Stop sends a signal to the StopChannel, which should trigger the job to stop. No error is returned if the job is not running.
+func (job *Job) Stop() {
+	logger := log.WithFields(log.Fields{"func": "Job.Stop", "jobKey": job.Key})
+
 	select {
 	case job.StopChannel <- true:
 		logger.Debug("stopped job")
-	case <-notRunning:
+	case <-job.NotRunning():
 		logger.Debug("job was not stopped as it is not running")
 	}
 }

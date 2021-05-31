@@ -1,6 +1,7 @@
 package worker_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/mlaradji/int-backend-mohamed/pb"
@@ -113,4 +114,64 @@ func TestJobMultiStop(t *testing.T) {
 	slowJob.Stop()
 	slowJob.Stop()
 	slowJob.WaitGroup.Wait()
+}
+
+// TestJobFollowLogShort executes a quick process that will be stopped after it ends.
+func TestJobFollowLogShort(t *testing.T) {
+	t.Parallel()
+
+	userId := "me"
+	store := worker.NewJobStore()
+
+	echoBytes := []byte("this is a multiline test\nwe should get this too\n")
+	expectedOutput := append(echoBytes, []byte("\n")...) // echo will emit an extra newline char
+
+	job, err := store.AddJob(userId, "echo", []string{string(echoBytes)})
+	require.Nil(t, err)
+
+	// start the job and wait for it to finish
+	err = store.StartJob(job)
+	require.Nil(t, err)
+
+	// get log channel
+	outputChan, err := store.JobFollowLog(job)
+	require.Nil(t, err)
+
+	actualOutput := []byte{}
+
+	for line := range outputChan {
+		actualOutput = append(actualOutput, line...)
+	}
+	require.Equal(t, expectedOutput, actualOutput, "expectedOutput", string(expectedOutput), "actualOutput", string(actualOutput))
+}
+
+// TestJobFollowLogLong executes a long process and checks that the log output is as expected.
+func TestJobFollowLogLong(t *testing.T) {
+	t.Parallel()
+
+	userId := "me"
+	store := worker.NewJobStore()
+
+	expectedOutput := []byte{}
+	for i := 1; i < 11; i++ {
+		expectedOutput = append(expectedOutput, []byte(fmt.Sprintf("Command no. %d\n", i))...) // echo will emit an extra newline char
+	}
+
+	job, err := store.AddJob(userId, "sh", []string{"test_echo_loop.sh"})
+	require.Nil(t, err)
+
+	// start the job and wait for it to finish
+	err = store.StartJob(job)
+	require.Nil(t, err)
+
+	// get log channel
+	outputChan, err := store.JobFollowLog(job)
+	require.Nil(t, err)
+
+	actualOutput := []byte{}
+
+	for line := range outputChan {
+		actualOutput = append(actualOutput, line...)
+	}
+	require.Equal(t, expectedOutput, actualOutput, "expectedOutput", string(expectedOutput), "actualOutput", string(actualOutput))
 }
