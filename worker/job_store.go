@@ -102,7 +102,6 @@ func (store *JobStore) StartJob(job Job) error {
 			logger.WithError(err).Error("process has failed")
 			job.JobStatus = pb.JobStatus_FAILED
 		} else {
-			logger.Info("SUCCESS")
 			job.JobStatus = pb.JobStatus_SUCCEEDED
 		}
 		exitCode := int32(group.Cmd.ProcessState.ExitCode())
@@ -117,7 +116,7 @@ func (store *JobStore) StartJob(job Job) error {
 	return nil
 }
 
-// JobFollowLog follows content of job's log file and sends to the returned channel. This method blocks until the log file is completely read and the job is not running.
+// JobFollowLog follows content of job's log file and sends to the returned channel. The returned channel receives data or blocks until the log file is completely read and the job is not running.
 func (store *JobStore) JobFollowLog(job Job) (<-chan []byte, error) {
 	logger := log.WithFields(log.Fields{"func": "JobStore.JobFollowLog", "jobKey": job.Key, "LogFilepath": job.LogFilepath()})
 
