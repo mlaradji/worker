@@ -9,8 +9,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// watchFile watches `filename` for changes, sending `true` every time a change is detected. The watcher is closed when the `done` channel receives input.
-func watchFile(done <-chan bool, filename string) (<-chan bool, error) {
+// watchFile watches `filename` for changes, sending a value every time a change is detected. The watcher is closed when the `done` channel receives input.
+func watchFile(done <-chan struct{}, filename string) (<-chan struct{}, error) {
 	logger := log.WithFields(log.Fields{"func": "WatchFile", "filename": filename})
 
 	// Create a filesystem watcher
@@ -21,8 +21,8 @@ func watchFile(done <-chan bool, filename string) (<-chan bool, error) {
 		return nil, err
 	}
 
-	// Initialize a channel to send `true` to whenever the file contents change.
-	fileChanged := make(chan bool)
+	// Initialize a channel to send a value to whenever the file contents change.
+	fileChanged := make(chan struct{})
 
 	go func() {
 		defer close(fileChanged)
@@ -35,7 +35,7 @@ func watchFile(done <-chan bool, filename string) (<-chan bool, error) {
 					return
 				}
 				logger.WithField("event", event).Debug("received filesystem event")
-				fileChanged <- true
+				fileChanged <- struct{}{}
 
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -61,11 +61,11 @@ func watchFile(done <-chan bool, filename string) (<-chan bool, error) {
 }
 
 // TailFollowFile reads and follows a local file, similar to `tail -f` but without log rotation or other advanced features, and outputs it to a channel. Tailing stops when `true` is received on `done`.
-func TailFollowFile(done <-chan bool, filename string) (<-chan []byte, error) {
+func TailFollowFile(done <-chan struct{}, filename string) (<-chan []byte, error) {
 	logger := log.WithFields(log.Fields{"func": "TailFollowFile", "filename": filename})
 
 	// watch file for changes
-	watchDone := make(chan bool)
+	watchDone := make(chan struct{})
 	fileChanged, err := watchFile(watchDone, filename)
 	if err != nil {
 		logger.Error("unable to monitor file changes")

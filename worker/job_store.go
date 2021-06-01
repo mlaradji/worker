@@ -120,7 +120,7 @@ func (store *JobStore) StartJob(job Job) error {
 func (store *JobStore) JobFollowLog(job Job) (<-chan []byte, error) {
 	logger := log.WithFields(log.Fields{"func": "JobStore.JobFollowLog", "jobKey": job.Key, "LogFilepath": job.LogFilepath()})
 
-	followDone := make(chan bool) // this is closed when the log file has been completely read and the job is not running
+	followDone := make(chan struct{}) // this is closed when the log file has been completely read and the job is not running
 
 	logChannel, err := TailFollowFile(followDone, job.LogFilepath())
 	if err != nil {

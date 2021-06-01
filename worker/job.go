@@ -27,7 +27,7 @@ type Job struct {
 	FinishedAt time.Time
 
 	WaitGroup   *sync.WaitGroup // WaitGroup will block if and only if the job is currently running.
-	StopChannel chan bool       // StopChannel can receive a `true` value which would cause the job to stop if it's running.
+	StopChannel chan struct{}   // StopChannel can receive an empty struct, which would cause the job to stop if it's running.
 }
 
 // LogFilepath returns the path to the job's log file.
@@ -41,12 +41,12 @@ func (job *Job) LogDirectory() string {
 }
 
 // NotRunning returns a channel that receives a value if and only if the job is not running.
-func (job *Job) NotRunning() <-chan bool {
-	notRunning := make(chan bool)
+func (job *Job) NotRunning() <-chan struct{} {
+	notRunning := make(chan struct{})
 
 	go func() {
 		job.WaitGroup.Wait()
-		notRunning <- true
+		close(notRunning)
 	}()
 
 	return notRunning
@@ -57,7 +57,7 @@ func (job *Job) Stop() {
 	logger := log.WithFields(log.Fields{"func": "Job.Stop", "jobKey": job.Key})
 
 	select {
-	case job.StopChannel <- true:
+	case job.StopChannel <- struct{}{}:
 		logger.Debug("stopped job")
 	case <-job.NotRunning():
 		logger.Debug("job was not stopped as it is not running")
@@ -74,7 +74,7 @@ func NewJob(userId string, command string, args []string) Job {
 		JobStatus:   pb.JobStatus_CREATED,
 		ExitCode:    -1,
 		CreatedAt:   time.Now(),
-		StopChannel: make(chan bool),
+		StopChannel: make(chan struct{}),
 		WaitGroup:   &sync.WaitGroup{},
 	}
 }

@@ -36,7 +36,7 @@ func main() {
 		log.Fatal("unable to follow job logs")
 	}
 
-	wait := make(chan bool)
+	wait := make(chan struct{})
 	go func() {
 		for chunk := range outputChan {
 			os.Stdout.Write(chunk)
