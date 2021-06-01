@@ -48,7 +48,7 @@ func main() {
 	time.Sleep(3 * time.Second)
 	job.Stop() // stop the job. non-blocking
 
-	<-job.NotRunning() // wait until the job is done. Equivalent to `job.WaitGroup.Wait()` in this case
+	<-job.Done // wait until the job is done
 	<-wait
 }
 ```

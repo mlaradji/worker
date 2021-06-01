@@ -4,9 +4,7 @@ import (
 	"errors"
 	"os"
 	"sync"
-	"time"
 
-	"github.com/mlaradji/int-backend-mohamed/pb"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -26,7 +24,7 @@ func NewJobStore() *JobStore {
 }
 
 // AddJob initializes a new job, creates log directories for it and adds it to the store.
-func (store *JobStore) AddJob(userId string, command string, args []string) (Job, error) {
+func (store *JobStore) AddJob(userId string, command string, args []string) (*Job, error) {
 	job := NewJob(userId, command, args)
 	logger := log.WithFields(log.Fields{"func": "JobStore.AddJob", "jobKey": job.Key})
 
@@ -34,7 +32,7 @@ func (store *JobStore) AddJob(userId string, command string, args []string) (Job
 	err := os.MkdirAll(job.LogDirectory(), os.ModePerm)
 	if err != nil {
 		logger.WithError(err).Error("unable to create log file directory")
-		return Job{}, err
+		return nil, err
 	}
 
 	// add the job to the store
@@ -42,76 +40,23 @@ func (store *JobStore) AddJob(userId string, command string, args []string) (Job
 	if loaded {
 		err := errors.New("the job id and user id combination already exists")
 		logger.WithError(err).Error("unable to add job")
-		return Job{}, err
+		return nil, err
 	}
 
 	return job, nil
 }
 
 // LoadJob loads a job from the store, and returns an error if the job does not exist or is invalid.
-func (store *JobStore) LoadJob(jobKey JobKey) (Job, error) {
+func (store *JobStore) LoadJob(jobKey JobKey) (*Job, error) {
 	jobInterface, ok := store.Job.Load(jobKey)
 	if !ok {
-		return Job{}, ErrJobDoesNotExist
+		return nil, ErrJobDoesNotExist
 	}
 
-	job, valid := jobInterface.(Job)
+	job, valid := jobInterface.(*Job)
 	if !valid {
-		return Job{}, errors.New("job was found but it is invalid")
+		return nil, errors.New("job was found but it is invalid")
 	}
 
 	return job, nil
-}
-
-/* ExecuteJob starts an already added job. */
-func (store *JobStore) StartJob(job Job) error {
-	logger := log.WithFields(log.Fields{"func": "JobStore.StartJob", "jobKey": job.Key})
-
-	// open the logFile for writing, and pass it to the process group command
-	logFile, err := os.OpenFile(job.LogFilepath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.WithError(err).Error("unable to open file for writing")
-		return err
-	}
-	group := NewProcessGroupCommand(job.StopChannel, logFile, job.Command, job.Args)
-
-	job.WaitGroup.Add(1) // block goroutines waiting for the job to finish
-
-	// start the process
-	if err := group.Start(); err != nil {
-		logger.WithError(err).Error("unable to start process")
-		return err
-	}
-
-	// update the job status to RUNNING
-	job.JobStatus = pb.JobStatus_RUNNING
-	store.Job.Store(job.Key, job)
-
-	go func() {
-		// close the logFile after the process is done
-		defer logFile.Close()
-
-		// Wait for the command to finish
-		stopped, err := group.Wait()
-		job.FinishedAt = time.Now()
-
-		// update job status and exit code
-		if stopped {
-			job.JobStatus = pb.JobStatus_STOPPED
-		} else if err != nil {
-			logger.WithError(err).Error("process has failed")
-			job.JobStatus = pb.JobStatus_FAILED
-		} else {
-			job.JobStatus = pb.JobStatus_SUCCEEDED
-		}
-		exitCode := int32(group.Cmd.ProcessState.ExitCode())
-		job.ExitCode = exitCode
-
-		// save job
-		store.Job.Store(job.Key, job)
-
-		job.WaitGroup.Done() // release goroutines waiting for the job to finish
-	}()
-
-	return nil
 }

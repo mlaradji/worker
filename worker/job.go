@@ -1,8 +1,8 @@
 package worker
 
 import (
+	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,8 +26,8 @@ type Job struct {
 	CreatedAt  time.Time
 	FinishedAt time.Time
 
-	WaitGroup   *sync.WaitGroup // WaitGroup will block if and only if the job is currently running.
-	StopChannel chan struct{}   // StopChannel can receive an empty struct, which would cause the job to stop if it's running.
+	Done        chan struct{} // Done is closed after the job is done. It should block if and only if the job is currently running.
+	StopChannel chan struct{} // StopChannel can receive an empty struct, which would cause the job to stop if it's running.
 }
 
 // LogFilepath returns the path to the job's log file.
@@ -40,18 +40,6 @@ func (job *Job) LogDirectory() string {
 	return filepath.Join("tmp", "jobs", job.Key.UserId, job.Key.JobId)
 }
 
-// NotRunning returns a channel that receives a value if and only if the job is not running.
-func (job *Job) NotRunning() <-chan struct{} {
-	notRunning := make(chan struct{})
-
-	go func() {
-		job.WaitGroup.Wait()
-		close(notRunning)
-	}()
-
-	return notRunning
-}
-
 // Stop sends a signal to the StopChannel, which should trigger the job to stop. No error is returned if the job is not running.
 func (job *Job) Stop() {
 	logger := log.WithFields(log.Fields{"func": "Job.Stop", "jobKey": job.Key})
@@ -59,7 +47,7 @@ func (job *Job) Stop() {
 	select {
 	case job.StopChannel <- struct{}{}:
 		logger.Debug("stopped job")
-	case <-job.NotRunning():
+	case <-job.Done:
 		logger.Debug("job was not stopped as it is not running")
 	}
 }
@@ -91,7 +79,7 @@ func (job *Job) Log() (<-chan []byte, error) {
 				if !ok {
 					return
 				}
-			case <-job.NotRunning():
+			case <-job.Done:
 				close(followDone)
 				break ForLoop
 			}
@@ -106,10 +94,56 @@ func (job *Job) Log() (<-chan []byte, error) {
 	return outputChan, nil
 }
 
+/* Start starts an already added job. */
+func (job *Job) Start() error {
+	logger := log.WithFields(log.Fields{"func": "Job.Start", "jobKey": job.Key})
+
+	// open the logFile for writing, and pass it to the process group command
+	logFile, err := os.OpenFile(job.LogFilepath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.WithError(err).Error("unable to open file for writing")
+		return err
+	}
+	group := NewProcessGroupCommand(job.StopChannel, logFile, job.Command, job.Args)
+
+	// start the process
+	if err := group.Start(); err != nil {
+		logger.WithError(err).Error("unable to start process")
+		return err
+	}
+
+	// update the job status to RUNNING
+	job.JobStatus = pb.JobStatus_RUNNING
+
+	go func() {
+		// close the Done channel and logFile after the process is done
+		defer close(job.Done)
+		defer logFile.Close()
+
+		// Wait for the command to finish
+		stopped, err := group.Wait()
+		job.FinishedAt = time.Now()
+
+		// update job status and exit code
+		if stopped {
+			job.JobStatus = pb.JobStatus_STOPPED
+		} else if err != nil {
+			logger.WithError(err).Error("process has failed")
+			job.JobStatus = pb.JobStatus_FAILED
+		} else {
+			job.JobStatus = pb.JobStatus_SUCCEEDED
+		}
+		exitCode := int32(group.Cmd.ProcessState.ExitCode())
+		job.ExitCode = exitCode
+	}()
+
+	return nil
+}
+
 // NewJob generates a new Job object with status CREATED and exit code -1.
-func NewJob(userId string, command string, args []string) Job {
+func NewJob(userId string, command string, args []string) *Job {
 	jobId := uuid.New().String()
-	return Job{
+	return &Job{
 		Key:         JobKey{UserId: userId, JobId: jobId},
 		Command:     command,
 		Args:        args,
@@ -117,6 +151,6 @@ func NewJob(userId string, command string, args []string) Job {
 		ExitCode:    -1,
 		CreatedAt:   time.Now(),
 		StopChannel: make(chan struct{}),
-		WaitGroup:   &sync.WaitGroup{},
+		Done:        make(chan struct{}),
 	}
 }

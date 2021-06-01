@@ -20,12 +20,12 @@ func TestJobStopped(t *testing.T) {
 	job, err := store.AddJob(userId, "watch", []string{"date", "&"})
 	require.Nil(t, err)
 
-	err = store.StartJob(job)
+	err = job.Start()
 	require.Nil(t, err)
 
 	// stop the job and wait for the job to end
 	job.Stop()
-	job.WaitGroup.Wait()
+	<-job.Done
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -45,9 +45,9 @@ func TestJobSucceeded(t *testing.T) {
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = store.StartJob(job)
+	err = job.Start()
 	require.Nil(t, err)
-	job.WaitGroup.Wait()
+	<-job.Done
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -68,9 +68,9 @@ func TestJobFailed(t *testing.T) {
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = store.StartJob(job)
+	err = job.Start()
 	require.Nil(t, err)
-	job.WaitGroup.Wait()
+	<-job.Done
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -92,9 +92,9 @@ func TestJobMultiStop(t *testing.T) {
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = store.StartJob(fastJob)
+	err = fastJob.Start()
 	require.Nil(t, err)
-	fastJob.WaitGroup.Wait()
+	<-fastJob.Done
 
 	// stop the job after the process ended
 	// this should not block
@@ -106,14 +106,14 @@ func TestJobMultiStop(t *testing.T) {
 	slowJob, err := store.AddJob(userId, "watch", []string{"date", "&"})
 	require.Nil(t, err)
 
-	err = store.StartJob(slowJob)
+	err = slowJob.Start()
 	require.Nil(t, err)
 
 	// stop the job multiple times and wait for the job to end
 	slowJob.Stop()
 	slowJob.Stop()
 	slowJob.Stop()
-	slowJob.WaitGroup.Wait()
+	<-slowJob.Done
 }
 
 // TestJobFollowLogShort executes a quick process that will be stopped after it ends.
@@ -130,7 +130,7 @@ func TestJobFollowLogShort(t *testing.T) {
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = store.StartJob(job)
+	err = job.Start()
 	require.Nil(t, err)
 
 	// get log channel
@@ -161,7 +161,7 @@ func TestJobFollowLogLong(t *testing.T) {
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = store.StartJob(job)
+	err = job.Start()
 	require.Nil(t, err)
 
 	// get log channel
