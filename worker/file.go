@@ -9,13 +9,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type FileChunk struct {
-	Content      []byte
-	SeekPosition int64 // SeekValue is the first position that has not been read yet.
-}
-
-// WatchFile watches `filename` for changes, sending `true` every time a change is detected. The watcher is closed when the `done` channel receives input.
-func WatchFile(done <-chan bool, filename string) (<-chan bool, error) {
+// watchFile watches `filename` for changes, sending `true` every time a change is detected. The watcher is closed when the `done` channel receives input.
+func watchFile(done <-chan bool, filename string) (<-chan bool, error) {
 	logger := log.WithFields(log.Fields{"func": "WatchFile", "filename": filename})
 
 	// Create a filesystem watcher
@@ -71,7 +66,7 @@ func TailFollowFile(done <-chan bool, filename string) (<-chan []byte, error) {
 
 	// watch file for changes
 	watchDone := make(chan bool)
-	fileChanged, err := WatchFile(watchDone, filename)
+	fileChanged, err := watchFile(watchDone, filename)
 	if err != nil {
 		logger.Error("unable to monitor file changes")
 		return nil, err
