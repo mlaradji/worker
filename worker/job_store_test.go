@@ -79,8 +79,32 @@ func TestJobFailed(t *testing.T) {
 	require.Equal(t, int32(12), job.ExitCode)
 }
 
-// TestJobMultiStop executes a quick process that will be stopped after it ends, and a slow process that will be stopped twice quickly.
-func TestJobMultiStop(t *testing.T) {
+// TestJobStartAfterLoad adds a new job to the store, loads it and then runs it.
+func TestJobStartAfterLoad(t *testing.T) {
+	t.Parallel()
+
+	userId := "me"
+	store := worker.NewJobStore()
+
+	job, err := store.AddJob(userId, "echo", []string{"testing"})
+	require.Nil(t, err)
+
+	// load and start
+	loadedJob1, err := store.LoadJob(job.Key)
+	require.Nil(t, err)
+
+	loadedJob1.Start()
+	<-loadedJob1.Done
+
+	// load and check contents
+	loadedJob2, err := store.LoadJob(job.Key)
+	require.Nil(t, err)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, loadedJob2.JobStatus)
+	require.Equal(t, int32(0), loadedJob2.ExitCode)
+}
+
+// TestJobStopAfterDone executes a quick process that will be stopped after it ends.
+func TestJobStopAfterDone(t *testing.T) {
 	t.Parallel()
 
 	userId := "me"
@@ -88,32 +112,50 @@ func TestJobMultiStop(t *testing.T) {
 
 	// quick process
 
-	fastJob, err := store.AddJob(userId, "echo", []string{"testing"})
+	job, err := store.AddJob(userId, "echo", []string{"testing"})
 	require.Nil(t, err)
 
 	// start the job and wait for it to finish
-	err = fastJob.Start()
+	err = job.Start()
 	require.Nil(t, err)
-	<-fastJob.Done
+	<-job.Done
 
 	// stop the job after the process ended
 	// this should not block
-	fastJob.Stop()
+	job.Stop()
 
-	// slow process
+	// load the job from store and check that the job information is correct
+	job, err = store.LoadJob(job.Key)
+	require.Nil(t, err)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, job.JobStatus)
+	require.Equal(t, int32(0), job.ExitCode)
+}
+
+// TestJobMultiStop executes a slow process that will be stopped multiple times quickly.
+func TestJobMultiStop(t *testing.T) {
+	t.Parallel()
+
+	userId := "me"
+	store := worker.NewJobStore()
 
 	// add a long running process that spawns multiple children
-	slowJob, err := store.AddJob(userId, "watch", []string{"date", "&"})
+	job, err := store.AddJob(userId, "watch", []string{"date", "&"})
 	require.Nil(t, err)
 
-	err = slowJob.Start()
+	err = job.Start()
 	require.Nil(t, err)
 
 	// stop the job multiple times and wait for the job to end
-	slowJob.Stop()
-	slowJob.Stop()
-	slowJob.Stop()
-	<-slowJob.Done
+	job.Stop()
+	job.Stop()
+	job.Stop()
+	<-job.Done
+
+	// load the job from store and check that the job information is correct
+	job, err = store.LoadJob(job.Key)
+	require.Nil(t, err)
+	require.Equal(t, pb.JobStatus_STOPPED, job.JobStatus)
+	require.NotEqual(t, 0, job.ExitCode)
 }
 
 // TestJobFollowLogShort executes a quick process that will be stopped after it ends.

@@ -27,7 +27,7 @@ type Job struct {
 	FinishedAt time.Time
 
 	Done        chan struct{} // Done is closed after the job is done. It should block if and only if the job is currently running.
-	StopChannel chan struct{} // StopChannel can receive an empty struct, which would cause the job to stop if it's running.
+	StopChannel chan struct{} // StopChannel can receive an empty struct, which would cause the job to stop if it's running. This channel is never closed.
 }
 
 // LogFilepath returns the path to the job's log file.
