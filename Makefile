@@ -6,6 +6,14 @@ pb-clean:
 
 clean:
 	rm tmp/* -r
+	
+certs:
+	cd certs && ./generate.sh
 
 test:
 	go test -v -cover -race -timeout 30s ./...
+	
+certs-clean:
+	rm -r certs/*.pem
+
+.PHONY: certs
