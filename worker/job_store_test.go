@@ -134,7 +134,7 @@ func TestJobFollowLogShort(t *testing.T) {
 	require.Nil(t, err)
 
 	// get log channel
-	outputChan, err := store.JobFollowLog(job)
+	outputChan, err := job.Log()
 	require.Nil(t, err)
 
 	actualOutput := []byte{}
@@ -165,7 +165,7 @@ func TestJobFollowLogLong(t *testing.T) {
 	require.Nil(t, err)
 
 	// get log channel
-	outputChan, err := store.JobFollowLog(job)
+	outputChan, err := job.Log()
 	require.Nil(t, err)
 
 	actualOutput := []byte{}

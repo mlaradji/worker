@@ -31,7 +31,7 @@ func main() {
 	}
 
 	// get log channel
-	outputChan, err := store.JobFollowLog(job)
+	outputChan, err := job.Log()
 	if err != nil {
 		log.Fatal("unable to follow job logs")
 	}

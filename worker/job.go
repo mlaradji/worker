@@ -64,6 +64,48 @@ func (job *Job) Stop() {
 	}
 }
 
+// Log follows content of job's log file and sends to the returned channel. The returned channel is only closed after the log file is completely read and the job is not running.
+func (job *Job) Log() (<-chan []byte, error) {
+	logger := log.WithFields(log.Fields{"func": "Job.Log", "jobKey": job.Key, "LogFilepath": job.LogFilepath()})
+
+	followDone := make(chan struct{}) // this is closed when the log file has been completely read and the job is not running
+
+	logChannel, err := TailFollowFile(followDone, job.LogFilepath())
+	if err != nil {
+		logger.WithError(err).Error("unable to tail logfile")
+		return nil, err
+	}
+
+	// initialize output channel
+	outputChan := make(chan []byte)
+
+	// send lines to channel
+	go func() {
+		defer close(outputChan)
+
+	ForLoop:
+		for {
+			select {
+			case chunk, ok := <-logChannel:
+				outputChan <- chunk
+				if !ok {
+					return
+				}
+			case <-job.NotRunning():
+				close(followDone)
+				break ForLoop
+			}
+		}
+
+		// send remaining contents
+		for chunk := range logChannel {
+			outputChan <- chunk
+		}
+	}()
+
+	return outputChan, nil
+}
+
 // NewJob generates a new Job object with status CREATED and exit code -1.
 func NewJob(userId string, command string, args []string) Job {
 	jobId := uuid.New().String()
