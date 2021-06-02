@@ -130,10 +130,10 @@ func (server *JobServer) JobStatus(ctx context.Context, req *pb.JobStatusRequest
 			UserId:     job.Key.UserId,
 			Command:    job.Command,
 			Args:       job.Args,
-			JobStatus:  job.JobStatus,
-			ExitCode:   job.ExitCode,
+			JobStatus:  job.GetJobStatus(),
+			ExitCode:   job.GetExitCode(),
 			CreatedAt:  timestamppb.New(job.CreatedAt),
-			FinishedAt: timestamppb.New(job.FinishedAt),
+			FinishedAt: timestamppb.New(job.GetFinishedAt()),
 		},
 	}
 
