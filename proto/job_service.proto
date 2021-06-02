@@ -6,7 +6,10 @@ option go_package = "github.com/mlaradji/int-backend-mohamed;pb";
 
 import "job_message.proto";
 
-message JobStartRequest { string command = 1; }
+message JobStartRequest {
+  string command = 1;
+  repeated string args = 2;
+}
 
 message JobStartResponse {
   string job_id = 1; // The server generates and returns a random UUIDv4
