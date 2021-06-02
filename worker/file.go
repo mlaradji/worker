@@ -15,9 +15,20 @@ func watchFile(done <-chan struct{}, filename string) (<-chan struct{}, error) {
 
 	// Create a filesystem watcher
 	watcher, err := fsnotify.NewWatcher()
-
 	if err != nil {
 		logger.WithError(err).Error("unable to initialize a new watcher")
+		return nil, err
+	}
+
+	err = watcher.Add(filename)
+	if err != nil {
+		logger.WithError(err).Error("unable to watch file")
+
+		wErr := watcher.Close()
+		if wErr != nil {
+			logger.WithError(wErr).Error("unable to close watcher")
+		}
+
 		return nil, err
 	}
 
@@ -51,12 +62,6 @@ func watchFile(done <-chan struct{}, filename string) (<-chan struct{}, error) {
 		}
 	}()
 
-	err = watcher.Add(filename)
-	if err != nil {
-		logger.WithError(err).Error("unable to watch file")
-		return nil, err
-	}
-
 	return fileChanged, nil
 }
 
@@ -64,22 +69,23 @@ func watchFile(done <-chan struct{}, filename string) (<-chan struct{}, error) {
 func TailFollowFile(done <-chan struct{}, filename string) (<-chan []byte, error) {
 	logger := log.WithFields(log.Fields{"func": "TailFollowFile", "filename": filename})
 
-	// watch file for changes
-	watchDone := make(chan struct{})
-	fileChanged, err := watchFile(watchDone, filename)
-	if err != nil {
-		logger.Error("unable to monitor file changes")
-		return nil, err
-	}
-
-	fileContentsChan := make(chan []byte) // read file contents will be sent to this channel
-	var seekPosition int64 = 0            // the first unread position of the file
-
 	file, err := os.Open(filename)
 	if err != nil {
 		logger.WithError(err).Error("unable to open file for reading")
 		return nil, err
 	}
+
+	// watch file for changes
+	watchDone := make(chan struct{})
+	fileChanged, err := watchFile(watchDone, filename)
+	if err != nil {
+		logger.Error("unable to monitor file changes")
+		close(watchDone)
+		return nil, err
+	}
+
+	fileContentsChan := make(chan []byte) // read file contents will be sent to this channel
+	var seekPosition int64 = 0            // the first unread position of the file
 
 	go func() {
 		// housekeeping
