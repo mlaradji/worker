@@ -12,8 +12,11 @@ certs:
 
 test:
 	go test -v -cover -race -timeout 30s ./...
-	
-certs-clean:
-	rm -r certs/*.pem
 
-.PHONY: certs
+certs-clean:
+	rm -r certs/**/*.pem
+
+server:
+	go run cmd/server/main.go
+
+.PHONY: certs server
