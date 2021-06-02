@@ -45,7 +45,12 @@ func watchFile(done <-chan struct{}, filename string) (<-chan struct{}, error) {
 				if !ok {
 					return
 				}
-				logger.WithField("event", event).Debug("received filesystem event")
+				if event.Op != fsnotify.Write {
+					continue
+				}
+				// TODO: handle other types of events if needed
+
+				logger.WithField("event", event).Debug("received filesystem write event")
 				fileChanged <- struct{}{}
 
 			case err, ok := <-watcher.Errors:
