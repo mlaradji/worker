@@ -25,7 +25,7 @@ func NewProcessGroupCommand(stop <-chan struct{}, logFile *os.File, name string,
 		args...,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // make sure descendants are put in the same process group
-	cmd.Stdin = logFile
+	cmd.Stderr = logFile
 	cmd.Stdout = logFile
 
 	return &ProcessGroupCommand{
@@ -53,11 +53,12 @@ func (group *ProcessGroupCommand) Wait() (bool, error) {
 		select {
 		case <-group.Stop:
 			err := syscall.Kill(-group.Cmd.Process.Pid, syscall.SIGKILL)
-			if err != nil {
-				logger.WithError(err).Error("unable to kill process group")
+			if err == nil {
+				stopped <- true
+				return
 			}
-			stopped <- true
-			return
+			logger.WithError(err).Error("unable to kill process group")
+
 		case <-end: // the process ended; stop this goroutine
 			stopped <- false
 			return
