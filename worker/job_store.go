@@ -10,7 +10,6 @@ import (
 
 var (
 	ErrJobDoesNotExist = errors.New("the job id and user id combination does not exist")
-	NEWLINE            = []byte("\n")
 )
 
 // JobStore stores Job objects, keyed by JobKey (jobId+userId).
