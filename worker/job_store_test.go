@@ -30,8 +30,8 @@ func TestJobStopped(t *testing.T) {
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_STOPPED, job.JobStatus)
-	require.NotEqual(t, 0, job.ExitCode)
+	require.Equal(t, pb.JobStatus_STOPPED, job.GetJobStatus())
+	require.NotEqual(t, 0, job.GetExitCode())
 }
 
 // TestJobSucceeded executes a quick process that should be successful. It also stops the process after it ends.
@@ -52,8 +52,8 @@ func TestJobSucceeded(t *testing.T) {
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_SUCCEEDED, job.JobStatus)
-	require.Equal(t, int32(0), job.ExitCode)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, job.GetJobStatus())
+	require.Equal(t, int32(0), job.GetExitCode())
 }
 
 // TestJobFailed executes a quick process that should fail.
@@ -75,8 +75,8 @@ func TestJobFailed(t *testing.T) {
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_FAILED, job.JobStatus)
-	require.Equal(t, int32(12), job.ExitCode)
+	require.Equal(t, pb.JobStatus_FAILED, job.GetJobStatus())
+	require.Equal(t, int32(12), job.GetExitCode())
 }
 
 // TestJobStartAfterLoad adds a new job to the store, loads it and then runs it.
@@ -99,8 +99,8 @@ func TestJobStartAfterLoad(t *testing.T) {
 	// load and check contents
 	loadedJob2, err := store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_SUCCEEDED, loadedJob2.JobStatus)
-	require.Equal(t, int32(0), loadedJob2.ExitCode)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, loadedJob2.GetJobStatus())
+	require.Equal(t, int32(0), loadedJob2.GetExitCode())
 }
 
 // TestJobStopAfterDone executes a quick process that will be stopped after it ends.
@@ -127,8 +127,8 @@ func TestJobStopAfterDone(t *testing.T) {
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_SUCCEEDED, job.JobStatus)
-	require.Equal(t, int32(0), job.ExitCode)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, job.GetJobStatus())
+	require.Equal(t, int32(0), job.GetExitCode())
 }
 
 // TestJobMultiStop executes a slow process that will be stopped multiple times quickly.
@@ -154,8 +154,8 @@ func TestJobMultiStop(t *testing.T) {
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
 	require.Nil(t, err)
-	require.Equal(t, pb.JobStatus_STOPPED, job.JobStatus)
-	require.NotEqual(t, 0, job.ExitCode)
+	require.Equal(t, pb.JobStatus_STOPPED, job.GetJobStatus())
+	require.NotEqual(t, 0, job.GetExitCode())
 }
 
 // TestJobFollowLogShort executes a quick process that will be stopped after it ends.

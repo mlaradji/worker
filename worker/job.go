@@ -3,6 +3,7 @@ package worker
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,16 +19,40 @@ type JobKey struct {
 
 // Job represents a single job with all of its related objects.
 type Job struct {
-	Key        JobKey
-	Command    string
-	Args       []string
-	JobStatus  pb.JobStatus
-	ExitCode   int32
-	CreatedAt  time.Time
-	FinishedAt time.Time
+	Key       JobKey
+	Command   string
+	Args      []string
+	CreatedAt time.Time
 
+	// these fields can be changed, and should only be accessed through the Get methods
+	jobStatus  pb.JobStatus
+	exitCode   int32
+	finishedAt time.Time
+
+	mu          *sync.RWMutex // mu is a read-write mutex to synchronize job updates.
 	Done        chan struct{} // Done is closed after the job is done. It should block if and only if the job is currently running.
 	StopChannel chan struct{} // StopChannel can receive an empty struct, which would cause the job to stop if it's running. This channel is never closed.
+}
+
+// GetJobStatus locks the job mutex for reading and returns the job's status.
+func (job *Job) GetJobStatus() pb.JobStatus {
+	job.mu.RLock()
+	defer job.mu.RUnlock()
+	return job.jobStatus
+}
+
+// GetExitCode locks the job mutex for reading and returns the exit code.
+func (job *Job) GetExitCode() int32 {
+	job.mu.RLock()
+	defer job.mu.RUnlock()
+	return job.exitCode
+}
+
+// GetFinishedAt locks the job mutex for reading and returns the time the job finished.
+func (job *Job) GetFinishedAt() time.Time {
+	job.mu.RLock()
+	defer job.mu.RUnlock()
+	return job.finishedAt
 }
 
 // LogFilepath returns the path to the job's log file.
@@ -94,7 +119,7 @@ func (job *Job) Log() (<-chan []byte, error) {
 	return outputChan, nil
 }
 
-/* Start starts an already added job. */
+/* Start runs the job without blocking. */
 func (job *Job) Start() error {
 	logger := log.WithFields(log.Fields{"func": "Job.Start", "jobKey": job.Key})
 
@@ -113,7 +138,9 @@ func (job *Job) Start() error {
 	}
 
 	// update the job status to RUNNING
-	job.JobStatus = pb.JobStatus_RUNNING
+	job.mu.Lock()
+	job.jobStatus = pb.JobStatus_RUNNING
+	job.mu.Unlock()
 
 	go func() {
 		// close the Done channel and logFile after the process is done
@@ -122,19 +149,23 @@ func (job *Job) Start() error {
 
 		// Wait for the command to finish
 		stopped, err := group.Wait()
-		job.FinishedAt = time.Now()
+		finishedAt := time.Now()
 
 		// update job status and exit code
+		job.mu.Lock()
+		defer job.mu.Unlock()
+
+		job.finishedAt = finishedAt
 		if stopped {
-			job.JobStatus = pb.JobStatus_STOPPED
+			job.jobStatus = pb.JobStatus_STOPPED
 		} else if err != nil {
-			logger.WithError(err).Error("process has failed")
-			job.JobStatus = pb.JobStatus_FAILED
+			logger.WithError(err).Debug("process has failed")
+			job.jobStatus = pb.JobStatus_FAILED
 		} else {
-			job.JobStatus = pb.JobStatus_SUCCEEDED
+			job.jobStatus = pb.JobStatus_SUCCEEDED
 		}
 		exitCode := int32(group.Cmd.ProcessState.ExitCode())
-		job.ExitCode = exitCode
+		job.exitCode = exitCode
 	}()
 
 	return nil
@@ -147,10 +178,11 @@ func NewJob(userId string, command string, args []string) *Job {
 		Key:         JobKey{UserId: userId, JobId: jobId},
 		Command:     command,
 		Args:        args,
-		JobStatus:   pb.JobStatus_CREATED,
-		ExitCode:    -1,
 		CreatedAt:   time.Now(),
 		StopChannel: make(chan struct{}),
 		Done:        make(chan struct{}),
+		jobStatus:   pb.JobStatus_CREATED,
+		exitCode:    -1,
+		mu:          &sync.RWMutex{},
 	}
 }
