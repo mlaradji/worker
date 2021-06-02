@@ -10,17 +10,18 @@ message JobInfo {
   string id = 1;      // a uuid
   string user_id = 2; // id of the user who started the job
   string command = 3;
-  JobStatus job_status = 4;
-  uint32 exit_code = 5;
+  repeated string args = 4;
+  JobStatus job_status = 5;
+  int32 exit_code = 6;
 
-  google.protobuf.Timestamp created_at = 6;
-  google.protobuf.Timestamp finished_at = 7;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp finished_at = 8;
 }
 
 enum JobStatus {
-  CREATED = 0; // The job was created but not run yet.
-  RUNNING = 1; // The job is currently running.
-  STOPPED = 2; // The job was stopped by a user.
+  CREATED = 0;   // The job was created but not run yet.
+  RUNNING = 1;   // The job is currently running.
+  STOPPED = 2;   // The job was stopped by a user.
   SUCCEEDED = 3; // The job finished with a zero exit code.
   FAILED = 4;    // The job finished with a non-zero exit code, or there was a
                  // server error in processing the job.

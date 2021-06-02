@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	log "github.com/sirupsen/logrus"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/mlaradji/int-backend-mohamed/worker"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // JobServer is a server wrapper around a job store.
@@ -50,4 +52,84 @@ func (server *JobServer) JobStart(ctx context.Context, req *pb.JobStartRequest) 
 
 	res := &pb.JobStartResponse{JobId: job.Key.JobId}
 	return res, nil
+}
+
+// JobStop is a unary RPC to stop an existing job.
+func (server *JobServer) JobStop(ctx context.Context, req *pb.JobStopRequest) (*pb.JobStopResponse, error) {
+	// get command name and args from request
+	jobId := req.GetJobId()
+
+	logger := log.WithFields(log.Fields{"func": "JobStop", "jobId": jobId})
+
+	// get userId attached to context
+	userId, err := GetUserIdFromContext(ctx)
+	if err != nil {
+		logger.WithError(err).Error("unable to get userId from context")
+		return nil, status.Error(codes.Internal, "unable to get userId") // internal server error since the interceptor should have set the user id in context
+	}
+
+	logger = logger.WithField("userId", userId)
+
+	logger.Debug("received a job stop request")
+
+	job, err := server.Store.LoadJob(worker.JobKey{UserId: userId, JobId: jobId})
+	if err != nil {
+		if errors.Is(err, worker.ErrJobDoesNotExist) {
+			logger.Debug("job was not found")
+			return nil, status.Error(codes.NotFound, "job was not found")
+		}
+
+		logger.WithError(err).Error("job is invalid")
+		return nil, status.Error(codes.Internal, "job is invalid")
+	}
+
+	job.Stop()
+	logger.Debug("sent job stop request")
+
+	return &pb.JobStopResponse{}, nil
+}
+
+// JobStatus is a unary RPC to query for job status.
+func (server *JobServer) JobStatus(ctx context.Context, req *pb.JobStatusRequest) (*pb.JobStatusResponse, error) {
+	// get command name and args from request
+	jobId := req.GetJobId()
+
+	logger := log.WithFields(log.Fields{"func": "JobStatus", "jobId": jobId})
+
+	// get userId attached to context
+	userId, err := GetUserIdFromContext(ctx)
+	if err != nil {
+		logger.WithError(err).Error("unable to get userId from context")
+		return nil, status.Error(codes.Internal, "unable to get userId") // internal server error since the interceptor should have set the user id in context
+	}
+
+	logger = logger.WithField("userId", userId)
+
+	logger.Debug("received a job status query request")
+
+	job, err := server.Store.LoadJob(worker.JobKey{UserId: userId, JobId: jobId})
+	if err != nil {
+		if errors.Is(err, worker.ErrJobDoesNotExist) {
+			logger.Debug("job was not found")
+			return nil, status.Error(codes.NotFound, "job was not found")
+		}
+
+		logger.WithError(err).Error("job is invalid")
+		return nil, status.Error(codes.Internal, "job is invalid")
+	}
+
+	jobStatus := &pb.JobStatusResponse{
+		JobInfo: &pb.JobInfo{
+			Id:         job.Key.JobId,
+			UserId:     job.Key.UserId,
+			Command:    job.Command,
+			Args:       job.Args,
+			JobStatus:  job.JobStatus,
+			ExitCode:   job.ExitCode,
+			CreatedAt:  timestamppb.New(job.CreatedAt),
+			FinishedAt: timestamppb.New(job.FinishedAt),
+		},
+	}
+
+	return jobStatus, nil
 }
