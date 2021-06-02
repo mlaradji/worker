@@ -133,3 +133,50 @@ func (server *JobServer) JobStatus(ctx context.Context, req *pb.JobStatusRequest
 
 	return jobStatus, nil
 }
+
+// JobLog is a server-side streaming RPC to follow a job's log until the job is done.
+func (server *JobServer) JobLogsStream(req *pb.JobLogsRequest, stream pb.JobService_JobLogsStreamServer) error {
+	// get command name and args from request
+	jobId := req.GetJobId()
+
+	logger := log.WithFields(log.Fields{"func": "JobLogsStream", "jobId": jobId})
+
+	// get userId attached to context
+	userId, err := GetUserIdFromContext(stream.Context())
+	if err != nil {
+		logger.WithError(err).Error("unable to get userId from context")
+		return status.Error(codes.Internal, "unable to get userId") // internal server error since the interceptor should have set the user id in context
+	}
+
+	logger = logger.WithField("userId", userId)
+
+	logger.Debug("received a job log follow request")
+
+	job, err := server.Store.LoadJob(worker.JobKey{UserId: userId, JobId: jobId})
+	if err != nil {
+		if errors.Is(err, worker.ErrJobDoesNotExist) {
+			logger.Debug("job was not found")
+			return status.Error(codes.NotFound, "job was not found")
+		}
+
+		logger.WithError(err).Error("job is invalid")
+		return status.Error(codes.Internal, "job is invalid")
+	}
+
+	logChannel, err := job.Log()
+	if err != nil {
+		logger.WithError(err).Error("unable to follow logs")
+		return status.Error(codes.Internal, "server unable to follow job logs")
+	}
+
+	for logChunk := range logChannel {
+		res := &pb.JobLogsResponse{Log: logChunk}
+		err := stream.Send(res)
+		if err != nil {
+			logger.WithError(err).Error("unable to send log chunk")
+			return status.Errorf(codes.Internal, "unable to send log chunk")
+		}
+	}
+
+	return nil
+}
