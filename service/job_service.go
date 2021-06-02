@@ -44,6 +44,12 @@ func (server *JobServer) JobStart(ctx context.Context, req *pb.JobStartRequest) 
 
 	job, err := server.Store.AddJob(userId, command, args)
 	if err != nil {
+		logger.WithError(err).Error("failed to add job")
+		return nil, status.Error(codes.Internal, "failed to add job")
+	}
+
+	err = job.Start()
+	if err != nil {
 		logger.WithError(err).Error("failed to start job")
 		return nil, status.Error(codes.Internal, "failed to start job")
 	}

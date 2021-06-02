@@ -3,6 +3,8 @@ package service_test
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"testing"
 
@@ -15,7 +17,16 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-const bufferSize = 1024
+const (
+	bufferSize = 1024
+	echoLoop   = `#!/bin/sh
+
+for i in {1..10}
+do
+  echo "Command no. $i"
+  sleep 0.2
+done`
+)
 
 var (
 	listener *bufconn.Listener
@@ -59,7 +70,8 @@ func dialListener(context.Context, string) (net.Conn, error) {
 	return listener.Dial()
 }
 
-func TestJobStart(t *testing.T) {
+// TestJobFlow starts a long running process, queries its status, listens to its logs, and stops it.
+func TestJobFlow(t *testing.T) {
 	t.Parallel()
 
 	caCertPath := "../certs/ca/cert.pem"
@@ -68,7 +80,7 @@ func TestJobStart(t *testing.T) {
 
 	// load client certificate
 	cert, certPool, err := service.LoadTLSCertificate(caCertPath, clientCertPath, clientKeyPath)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	tlsCredentials := service.MakeClientTLSCredentials(cert, certPool)
 
 	// connect to server
@@ -76,12 +88,58 @@ func TestJobStart(t *testing.T) {
 	dialOption := grpc.WithContextDialer(dialListener)
 	target := "bufnet"
 	conn, err := grpc.DialContext(ctx, target, dialOption, grpc.WithTransportCredentials(tlsCredentials))
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer conn.Close()
 
 	client := pb.NewJobServiceClient(conn)
 
-	_, err = client.JobStart(ctx, &pb.JobStartRequest{Command: "echo", Args: []string{"hi"}})
-	require.Nil(t, err, err)
+	// start a long running job for which we know the output
+	command := "sh"
+	args := []string{"-c", echoLoop}
+	startRes, err := client.JobStart(ctx, &pb.JobStartRequest{Command: command, Args: args})
+	require.NoError(t, err)
 
+	// check that job was successfully started
+	jobId := startRes.GetJobId()
+	statusRes, err := client.JobStatus(ctx, &pb.JobStatusRequest{JobId: jobId})
+	require.NoError(t, err)
+
+	jobInfo := statusRes.GetJobInfo()
+	require.Equal(t, command, jobInfo.Command)
+	require.Equal(t, args, jobInfo.Args)
+	require.Contains(t, []int32{-1, 0}, jobInfo.ExitCode)
+	require.Equal(t, jobId, jobInfo.Id)
+	require.Equal(t, "client1", jobInfo.UserId)                                                          // TODO: remove hard-coded userId
+	require.Contains(t, []pb.JobStatus{pb.JobStatus_RUNNING, pb.JobStatus_SUCCEEDED}, jobInfo.JobStatus) // process might have finished
+
+	// check that log output is correct. We should get 10 messages.
+	expectedOutput := []byte{}
+	for i := 1; i < 11; i++ {
+		expectedOutput = append(expectedOutput, []byte(fmt.Sprintf("Command no. %d\n", i))...) // echo will emit an extra newline char
+	}
+	actualOutput := []byte{}
+	logStream, err := client.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: jobId})
+	require.NoError(t, err)
+
+	for {
+		logRes, err := logStream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+		}
+
+		actualOutput = append(actualOutput, logRes.GetLog()...)
+	}
+
+	require.Equal(t, expectedOutput, actualOutput)
+
+	// check that the process is done
+	successRes, err := client.JobStatus(ctx, &pb.JobStatusRequest{JobId: jobId})
+	require.NoError(t, err)
+
+	successJobInfo := successRes.GetJobInfo()
+	require.Equal(t, int32(0), successJobInfo.ExitCode)
+	require.Equal(t, pb.JobStatus_SUCCEEDED, successJobInfo.JobStatus)
 }
