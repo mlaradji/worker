@@ -27,13 +27,6 @@ func (store *JobStore) AddJob(userId string, command string, args []string) (*Jo
 	job := NewJob(userId, command, args)
 	logger := log.WithFields(log.Fields{"func": "JobStore.AddJob", "jobKey": job.Key})
 
-	// create the log's directory if it doesn't already exist
-	err := os.MkdirAll(job.LogDirectory(), os.ModePerm)
-	if err != nil {
-		logger.WithError(err).Error("unable to create log file directory")
-		return nil, err
-	}
-
 	// add the job to the store
 	_, loaded := store.Job.LoadOrStore(job.Key, job)
 	if loaded {
@@ -41,6 +34,21 @@ func (store *JobStore) AddJob(userId string, command string, args []string) (*Jo
 		logger.WithError(err).Error("unable to add job")
 		return nil, err
 	}
+
+	// create the log's directory if it doesn't already exist
+	err := os.MkdirAll(job.LogDirectory(), os.ModePerm)
+	if err != nil {
+		logger.WithError(err).Error("unable to create log file directory")
+		return nil, err
+	}
+
+	// create the log file
+	file, err := os.Create(job.LogFilepath())
+	if err != nil {
+		logger.WithError(err).Error("unable to touch log file")
+		return nil, err
+	}
+	file.Close()
 
 	return job, nil
 }
