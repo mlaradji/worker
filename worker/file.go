@@ -128,7 +128,7 @@ func TailFollowFile(done <-chan struct{}, filename string) (<-chan []byte, error
 
 // sendContentsUntilEOF reads from file until EOF is reached. Returns seek position.
 func sendContentsUntilEOF(file *os.File, fileContentsChan chan<- []byte, seekPosition int64) (int64, error) {
-	readBytes := make([]byte, 64) // we choose a small buffer here for more realtime
+	readBytes := make([]byte, 16*1024) // we choose a small buffer here for more realtime
 
 	for {
 		// load new content into buffer
