@@ -26,7 +26,7 @@ Options:
 	--address=<addr>      Server address and port [default: 0.0.0.0:8000]
 	--cert=<cert>         Path to the client certificate for mTLS. [default: certs/client1/cert.pem]
 	--key=<key>           Path to the client key for mTLS. [default: certs/client1/key.pem]
-	--ca=<ca>             Path to the CA certificate for the server for mTLS. [default: certs/ca/cert.pem]
+	--ca=<ca>             Path to the CA certificate for the server for mTLS. [default: certs/ca1/cert.pem]
 
 Commands:
 	start     Start a new job for the input command. If successful, the new job id will be printed.
