@@ -22,7 +22,7 @@ Options:
 	--address=<addr>      Server address and port [default: 0.0.0.0:8000]
 	--cert=<cert>         Path to the server certificate for mTLS. [default: certs/server/cert.pem]
 	--key=<key>           Path to the server key for mTLS. [default: certs/server/key.pem]
-	--ca=<ca>             Path to the CA certificate for mTLS. [default: certs/ca/cert.pem]`
+	--ca=<ca>             Path to the CA certificate for mTLS. [default: certs/ca1/cert.pem]`
 
 // Configuration contains all variables that were passed (implicity or explicitly) to the command.
 type Configuration struct {
@@ -74,7 +74,6 @@ func init() {
 
 func main() {
 	logger := log.WithField("func", "main")
-
 	// initialize job service
 	jobStore := worker.NewJobStore()
 	jobServer := service.NewJobServer(jobStore)
@@ -86,13 +85,13 @@ func main() {
 	// start listening
 	listener, err := net.Listen("tcp", Config.Address)
 	if err != nil {
-		logger.WithError(err).WithField("address", Config.Address).Fatal("unable to listen on address")
+		logger.WithError(err).Fatal("unable to listen on address")
 	}
-	logger.WithField("address", Config.Address).Info("started listening")
+	logger.Debug("started listening")
 
 	// start server
 	err = grpcServer.Serve(listener)
 	if err != nil {
-		logger.WithError(err).Fatal("server failed to start")
+		logger.WithError(err).Fatal("unable to serve job server on listener")
 	}
 }

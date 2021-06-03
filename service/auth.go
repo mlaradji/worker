@@ -66,7 +66,7 @@ func GetUserIdFromContext(ctx context.Context) (string, error) {
 
 // UnaryAuth is a unary gRPC interceptor that authenticates and authorizes clients, and attaches their user ID to the request context.
 func UnaryAuth(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	userId, err := authenticateAndAuthorize(ctx)
+	userId, err := authorize(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func UnaryAuth(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
 
 // StreamAuth is a server stream gRPC interceptor that authenticates and authorizes clients, and attaches their user ID to the request context.
 func StreamAuth(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	userId, err := authenticateAndAuthorize(ss.Context())
+	userId, err := authorize(ss.Context())
 	if err != nil {
 		return err
 	}
@@ -91,8 +91,8 @@ func StreamAuth(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerIn
 	return handler(srv, sswc)
 }
 
-// authenticateAndAuthorize gets the client ID from the context, checks it against the global user map, and returns the userId.
-func authenticateAndAuthorize(ctx context.Context) (string, error) {
+// authorize gets the client ID from the context, checks it against the global user map, and returns the userId.
+func authorize(ctx context.Context) (string, error) {
 	logger := log.WithFields(log.Fields{"func": "authenticateAndAuthorize"})
 
 	// client authentication

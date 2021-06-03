@@ -39,7 +39,7 @@ func init() {
 
 	logger := log.WithFields(log.Fields{"func": "init"})
 
-	caCertPath := "../certs/ca/cert.pem"
+	caCertPath := "../certs/ca1/cert.pem"
 	serverCertPath := "../certs/server/cert.pem"
 	serverKeyPath := "../certs/server/key.pem"
 
@@ -59,7 +59,7 @@ func init() {
 	pb.RegisterJobServiceServer(grpcServer, jobServer)
 
 	// start listening
-	listener = bufconn.Listen(bufferSize)
+	listener = bufconn.Listen(1024 * 1024)
 
 	// start server
 	go func() {
@@ -85,9 +85,57 @@ func createConnection(ctx context.Context, caCertPath string, clientCertPath str
 
 	// connect to server
 
-	dialOption := grpc.WithContextDialer(dialListener)
-	target := "bufnet"
-	return grpc.DialContext(ctx, target, dialOption, grpc.WithTransportCredentials(tlsCredentials))
+	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(dialListener), grpc.WithTransportCredentials(tlsCredentials))
+}
+
+// TestAuthentication connects with "client4", whose certificate was not signed by the CA and so should be rejected.
+func TestAuthentication(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	conn, err := createConnection(ctx, "../certs/ca1/cert.pem", "../certs/client4/cert.pem", "../certs/client4/key.pem")
+	require.NoError(t, err)
+	defer conn.Close()
+	client := pb.NewJobServiceClient(conn)
+
+	// test unary authorization
+	_, err = client.JobStart(ctx, &pb.JobStartRequest{Command: "echo", Args: []string{"hi"}})
+	errStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, errStatus.Code())
+
+	// test stream authorization
+	_, err = client.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: "dummy"})
+	errStatus, ok = status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, errStatus.Code())
+}
+
+// TestAuthorization attempts to connect with "client3", who's not authorized to use the service.
+func TestAuthorization(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	conn, err := createConnection(ctx, "../certs/ca1/cert.pem", "../certs/client3/cert.pem", "../certs/client3/key.pem")
+	require.NoError(t, err)
+	defer conn.Close()
+	client := pb.NewJobServiceClient(conn)
+
+	// test unary authorization
+	_, err = client.JobStart(ctx, &pb.JobStartRequest{Command: "echo", Args: []string{"hi"}})
+	errStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.PermissionDenied, errStatus.Code())
+
+	// test stream authorization
+	stream, err := client.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: "dummy"})
+	require.NoError(t, err)
+	err = stream.RecvMsg(&pb.JobLogsResponse{})
+	errStatus, ok = status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.PermissionDenied, errStatus.Code())
 }
 
 // TestJobFlow starts a long running process, queries its status, listens to its logs, and stops it. A second client will attempt to query information about it, which should not be allowed.
@@ -95,7 +143,7 @@ func TestJobFlow(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	conn, err := createConnection(ctx, "../certs/ca/cert.pem", "../certs/client1/cert.pem", "../certs/client1/key.pem")
+	conn, err := createConnection(ctx, "../certs/ca1/cert.pem", "../certs/client1/cert.pem", "../certs/client1/key.pem")
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -152,10 +200,9 @@ func TestJobFlow(t *testing.T) {
 	require.Equal(t, pb.JobStatus_SUCCEEDED, successJobInfo.JobStatus)
 
 	// try to modify or query the job from another client
-	ctx = context.Background()
-	conn2, err := createConnection(ctx, "../certs/ca/cert.pem", "../certs/client2/cert.pem", "../certs/client2/key.pem")
+	conn2, err := createConnection(ctx, "../certs/ca1/cert.pem", "../certs/client2/cert.pem", "../certs/client2/key.pem")
 	require.NoError(t, err)
-	defer conn.Close()
+	defer conn2.Close()
 
 	client2 := pb.NewJobServiceClient(conn2)
 
@@ -169,10 +216,10 @@ func TestJobFlow(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, codes.NotFound, errStatus.Code())
 
-	_, err = client2.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: jobId})
-	require.Error(t, err, "err", err)
-	log.Debug(err)
+	streamClient2, err := client2.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: jobId})
+	require.NoError(t, err)
+	err = streamClient2.RecvMsg(&pb.JobLogsResponse{})
 	errStatus, ok = status.FromError(err)
 	require.True(t, ok)
-	require.Equal(t, codes.NotFound, errStatus.Code(), "details", errStatus.Details())
+	require.Equal(t, codes.NotFound, errStatus.Code())
 }

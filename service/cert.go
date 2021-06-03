@@ -47,6 +47,6 @@ func MakeClientTLSCredentials(cert tls.Certificate, certPool *x509.CertPool) cre
 
 // MakeServerTLSCredentials generates server-side TLS configuration.
 func MakeServerTLSCredentials(cert tls.Certificate, certPool *x509.CertPool) credentials.TransportCredentials {
-	config := &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: certPool, CipherSuites: cipherSuites}
+	config := &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: certPool, CipherSuites: cipherSuites, MinVersion: tls.VersionTLS13}
 	return credentials.NewTLS(config)
 }
