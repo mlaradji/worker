@@ -130,7 +130,6 @@ func TailFollowFile(done <-chan struct{}, filename string) (<-chan []byte, error
 func sendContentsUntilEOF(file *os.File, fileContentsChan chan<- []byte, seekPosition int64) (int64, error) {
 	readBytes := make([]byte, 64) // buffer to store file contents.
 
-ForLoop:
 	for {
 		// load new content into buffer
 		numBytes, err := file.ReadAt(readBytes, seekPosition)
@@ -146,12 +145,10 @@ ForLoop:
 		if err != nil {
 			switch err {
 			case io.EOF, io.ErrShortWrite:
-				break ForLoop
+				return seekPosition, nil
 			default:
 				return 0, err
 			}
 		}
 	}
-
-	return seekPosition, nil
 }
