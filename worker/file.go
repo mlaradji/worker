@@ -1,7 +1,7 @@
 package worker
 
 import (
-	"bytes"
+	"errors"
 	"io"
 	"os"
 
@@ -128,26 +128,24 @@ func TailFollowFile(done <-chan struct{}, filename string) (<-chan []byte, error
 
 // sendContentsUntilEOF reads from file until EOF is reached. Returns seek position.
 func sendContentsUntilEOF(file *os.File, fileContentsChan chan<- []byte, seekPosition int64) (int64, error) {
-	readBytes := make([]byte, 64) // buffer to store file contents.
+	readBytes := make([]byte, 64) // we choose a small buffer here for more realtime
 
 	for {
 		// load new content into buffer
 		numBytes, err := file.ReadAt(readBytes, seekPosition)
-		seekPosition += int64(numBytes)
-		trimmedBytes := bytes.TrimRight(readBytes[:numBytes], "\x00") // increment seekValue by number of read bytes
 
-		if len(trimmedBytes) > 0 {
-			// send read bytes
-			fileContentsChan <- trimmedBytes
+		// even if there was an error, let's send whatever data we have
+		if numBytes > 0 {
+			seekPosition += int64(numBytes)
+			fileContentsChan <- readBytes[:numBytes]
 		}
 
 		// handle error
 		if err != nil {
-			switch err {
-			case io.EOF, io.ErrShortWrite:
+			if errors.Is(err, io.EOF) {
 				return seekPosition, nil
-			default:
-				return 0, err
+			} else {
+				return seekPosition, err
 			}
 		}
 	}
