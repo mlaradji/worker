@@ -14,6 +14,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -33,6 +35,8 @@ var (
 )
 
 func init() {
+	log.SetLevel(log.DebugLevel)
+
 	logger := log.WithFields(log.Fields{"func": "init"})
 
 	caCertPath := "../certs/ca/cert.pem"
@@ -70,24 +74,28 @@ func dialListener(context.Context, string) (net.Conn, error) {
 	return listener.Dial()
 }
 
-// TestJobFlow starts a long running process, queries its status, listens to its logs, and stops it.
-func TestJobFlow(t *testing.T) {
-	t.Parallel()
-
-	caCertPath := "../certs/ca/cert.pem"
-	clientCertPath := "../certs/client1/cert.pem"
-	clientKeyPath := "../certs/client1/key.pem"
-
+func createConnection(ctx context.Context, caCertPath string, clientCertPath string, clientKeyPath string) (*grpc.ClientConn, error) {
 	// load client certificate
 	cert, certPool, err := service.LoadTLSCertificate(caCertPath, clientCertPath, clientKeyPath)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
+
 	tlsCredentials := service.MakeClientTLSCredentials(cert, certPool)
 
 	// connect to server
-	ctx := context.Background()
+
 	dialOption := grpc.WithContextDialer(dialListener)
 	target := "bufnet"
-	conn, err := grpc.DialContext(ctx, target, dialOption, grpc.WithTransportCredentials(tlsCredentials))
+	return grpc.DialContext(ctx, target, dialOption, grpc.WithTransportCredentials(tlsCredentials))
+}
+
+// TestJobFlow starts a long running process, queries its status, listens to its logs, and stops it. A second client will attempt to query information about it, which should not be allowed.
+func TestJobFlow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	conn, err := createConnection(ctx, "../certs/ca/cert.pem", "../certs/client1/cert.pem", "../certs/client1/key.pem")
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -142,4 +150,29 @@ func TestJobFlow(t *testing.T) {
 	successJobInfo := successRes.GetJobInfo()
 	require.Equal(t, int32(0), successJobInfo.ExitCode)
 	require.Equal(t, pb.JobStatus_SUCCEEDED, successJobInfo.JobStatus)
+
+	// try to modify or query the job from another client
+	ctx = context.Background()
+	conn2, err := createConnection(ctx, "../certs/ca/cert.pem", "../certs/client2/cert.pem", "../certs/client2/key.pem")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client2 := pb.NewJobServiceClient(conn2)
+
+	_, err = client2.JobStatus(ctx, &pb.JobStatusRequest{JobId: jobId})
+	errStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.NotFound, errStatus.Code())
+
+	_, err = client2.JobStop(ctx, &pb.JobStopRequest{JobId: jobId})
+	errStatus, ok = status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.NotFound, errStatus.Code())
+
+	_, err = client2.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: jobId})
+	require.Error(t, err, "err", err)
+	log.Debug(err)
+	errStatus, ok = status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.NotFound, errStatus.Code(), "details", errStatus.Details())
 }

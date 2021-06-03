@@ -90,7 +90,7 @@ func (server *JobServer) JobStop(ctx context.Context, req *pb.JobStopRequest) (*
 	}
 
 	job.Stop()
-	logger.Debug("sent job stop request")
+	logger.Debug("sent stop request to job")
 
 	return &pb.JobStopResponse{}, nil
 }

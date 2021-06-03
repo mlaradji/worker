@@ -5,11 +5,11 @@ build:
 	mkdir -p bin
 	go build -o bin/worker-server cmd/server/main.go
 
-clean:
-	rm tmp/* -r
-
 test:
 	go test -v -cover -race -timeout 30s ./...
+
+clean:
+	rm tmp/* -r
 
 tls-gen:
 	cd certs && ./generate.sh
