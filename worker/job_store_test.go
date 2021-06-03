@@ -195,7 +195,15 @@ func TestJobFollowLogLong(t *testing.T) {
 	store := worker.NewJobStore()
 
 	expectedOutput := []byte{}
-	for i := 1; i < 11; i++ {
+	for i := 1; i < 5; i++ {
+		expectedOutput = append(expectedOutput, []byte(fmt.Sprintf("Command no. %d\n", i))...) // echo will emit an extra newline char
+	}
+	expectedOutput = append(expectedOutput, []byte("Error 1\n")...)
+	for i := 5; i < 8; i++ {
+		expectedOutput = append(expectedOutput, []byte(fmt.Sprintf("Command no. %d\n", i))...) // echo will emit an extra newline char
+	}
+	expectedOutput = append(expectedOutput, []byte("Error 2\n")...)
+	for i := 8; i < 11; i++ {
 		expectedOutput = append(expectedOutput, []byte(fmt.Sprintf("Command no. %d\n", i))...) // echo will emit an extra newline char
 	}
 
@@ -217,3 +225,5 @@ func TestJobFollowLogLong(t *testing.T) {
 	}
 	require.Equal(t, expectedOutput, actualOutput, "expectedOutput", string(expectedOutput), "actualOutput", string(actualOutput))
 }
+
+// TODO: Test a process that simultaneously outputs to both stdout and stderr. If the process attempts to write to both at the same time, they may be combined in a non-meaningful way (e.g. "HeErrorllo" instead of "Hello\nError\n").

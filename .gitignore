@@ -27,3 +27,6 @@
 tmp/
 
 *.bak
+
+# Built binaries
+bin/
