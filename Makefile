@@ -1,22 +1,26 @@
+server:
+	go run cmd/server/main.go
+
+build:
+	mkdir -p bin
+	go build -o bin/worker-server cmd/server/main.go
+
+clean:
+	rm tmp/* -r
+
+test:
+	go test -v -cover -race -timeout 30s ./...
+
+tls-gen:
+	cd certs && ./generate.sh
+
+tls-clean:
+	rm -r certs/**/*.pem
+
 pb-gen:
 	protoc --proto_path=proto proto/*.proto  --go_out=paths=source_relative:pb --go-grpc_out=paths=source_relative:pb
 
 pb-clean:
 	rm pb/* -r
 
-clean:
-	rm tmp/* -r
-	
-certs:
-	cd certs && ./generate.sh
-
-test:
-	go test -v -cover -race -timeout 30s ./...
-
-certs-clean:
-	rm -r certs/**/*.pem
-
-server:
-	go run cmd/server/main.go
-
-.PHONY: certs server
+.PHONY: certs
