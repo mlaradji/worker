@@ -10,6 +10,7 @@ import (
 	"github.com/mlaradji/int-backend-mohamed/service"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // Usage is the help docs, which docopt can directly parse.
@@ -63,8 +64,8 @@ type Configuration struct {
 }
 
 var (
-	Config = &Configuration{}
-	Client pb.JobServiceClient
+	Config         = &Configuration{}
+	TLSCredentials credentials.TransportCredentials
 )
 
 func init() {
@@ -94,28 +95,33 @@ func init() {
 		logger.WithError(err).Fatal("unable to load TLS certificate")
 	}
 
-	tlsCredentials := service.MakeClientTLSCredentials(cert, certPool)
+	TLSCredentials = service.MakeClientTLSCredentials(cert, certPool)
 
 	logger.Debug("successfully loaded certificates")
-
-	conn, err := grpc.Dial(Config.Address, grpc.WithTransportCredentials(tlsCredentials))
-	if err != nil {
-		logger.WithError(err).Fatal("cannot dial server; is the server running?")
-	}
-
-	Client = pb.NewJobServiceClient(conn)
-
-	logger.Debug("successfully initialized client")
 }
 
 func main() {
 	logger := log.WithField("func", "main")
 
+	conn, err := grpc.Dial(Config.Address, grpc.WithTransportCredentials(TLSCredentials))
+	if err != nil {
+		logger.WithError(err).Fatal("cannot dial server")
+	}
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			logger.WithError(err).Error("unable to close connection")
+		}
+	}()
+
 	ctx := context.Background()
+	client := pb.NewJobServiceClient(conn)
+
+	logger.Debug("successfully initialized client")
 
 	if Config.Start {
 		// start a new job
-		res, err := Client.JobStart(ctx, &pb.JobStartRequest{Command: Config.Command, Args: Config.Args})
+		res, err := client.JobStart(ctx, &pb.JobStartRequest{Command: Config.Command, Args: Config.Args})
 		if err != nil {
 			logger.WithError(err).Fatal("received an error response")
 		}
@@ -127,7 +133,7 @@ func main() {
 
 	if Config.Stop {
 		// stop a current job
-		_, err := Client.JobStop(ctx, &pb.JobStopRequest{JobId: Config.JobId})
+		_, err := client.JobStop(ctx, &pb.JobStopRequest{JobId: Config.JobId})
 		if err != nil {
 			logger.WithError(err).Fatal("received an error response")
 		}
@@ -138,7 +144,7 @@ func main() {
 
 	if Config.Status {
 		// query an existing job's status
-		res, err := Client.JobStatus(ctx, &pb.JobStatusRequest{JobId: Config.JobId})
+		res, err := client.JobStatus(ctx, &pb.JobStatusRequest{JobId: Config.JobId})
 		if err != nil {
 			logger.WithError(err).Fatal("received an error response")
 		}
@@ -150,7 +156,7 @@ func main() {
 
 	if Config.Logs {
 		// follow a job's logs
-		logStream, err := Client.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: Config.JobId})
+		logStream, err := client.JobLogsStream(ctx, &pb.JobLogsRequest{JobId: Config.JobId})
 		if err != nil {
 			logger.WithError(err).Fatal("received an error response")
 		}

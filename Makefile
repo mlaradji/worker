@@ -16,8 +16,7 @@ clean:
 	rm tmp/* -r
 
 tls-gen:
-	cd certs
-	./generate.sh
+	cd certs && ./generate.sh
 
 tls-clean:
 	rm -r certs/**/*.pem
