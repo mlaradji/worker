@@ -73,7 +73,8 @@ func init() {
 }
 
 func main() {
-	logger := log.WithField("func", "main")
+	logger := log.WithFields(log.Fields{"func": "main", "address": Config.Address})
+
 	// initialize job service
 	jobStore := worker.NewJobStore()
 	jobServer := service.NewJobServer(jobStore)
@@ -87,7 +88,7 @@ func main() {
 	if err != nil {
 		logger.WithError(err).Fatal("unable to listen on address")
 	}
-	logger.Debug("started listening")
+	logger.Info("started listening")
 
 	// start server
 	err = grpcServer.Serve(listener)
