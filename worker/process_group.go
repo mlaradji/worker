@@ -61,24 +61,22 @@ func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWrit
 		return err
 	}
 
-	// wait for the process to end, and then close the done channel
+	// wait for the process to end, and then close the done channel and update the doneAt time
 	go func() {
-		// update doneAt and close done channel at end
-		defer func() {
-			close(group.Done)
-			doneAt := time.Now()
-			group.mu.Lock()
-			group.doneAt = doneAt
-			group.mu.Unlock()
-		}()
-
 		err := group.Cmd.Wait()
 		if err != nil {
 			logger.WithError(err).Debug("the process has failed")
 		}
+
+		// update doneAt and close done channel at end
+		close(group.Done)
+		doneAt := time.Now()
+		group.mu.Lock()
+		group.doneAt = doneAt
+		group.mu.Unlock()
 	}()
 
-	// close the stop channel after the job is done
+	// after the job is done, close the stop channel and set isDone to true
 	go func() {
 		// wait for the job to finish
 		<-group.Done
@@ -95,6 +93,7 @@ func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWrit
 		case <-group.Done: // the process ended
 			return
 		case <-group.stop:
+			// TODO: potential race condition here. If we enter the <-group.stop branch, the process can end before the kill command is issued.
 			err := syscall.Kill(-group.Cmd.Process.Pid, syscall.SIGKILL)
 			if err == nil {
 				group.mu.Lock()
@@ -115,10 +114,10 @@ func (group *ProcessGroupCommand) Stop() bool {
 	logger := log.WithField("func", "ProcessGroupCommand.Stop")
 
 	_, _, shared := group.group.Do("stop", func() (interface{}, error) {
-		// add this function to the wait group of stop senders and check if the job is done
+		// grab the mutex
 		// This accomplishes two things:
 		//		1. If the process is currently running, but finishes before this Stop function finishes, the stop channel will only close after this function finishes.
-		//		2. If the process just stopped, and it is waiting for other instances of this Stop function to finish, then WaitGroup.Add will block until the process status was updated. This means that isDone will be true and so we avoid sending data to a closed channel.
+		//		2. If the process just stopped, then isDone will be true and so we avoid sending data to a closed channel.
 		group.stopMutex.Lock()
 		defer group.stopMutex.Unlock()
 
