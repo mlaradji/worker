@@ -14,6 +14,25 @@ To generate certificates, run `make tls-clean` and then `make tls-gen`.
 
 The worker client can be started through either `go run cmd/cli/main.go`, or `./bin/worker-cli` if the binary was built. See `--help` for usage.
 
+### Example
+
+```sh
+# job id will be printed
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem start -- watch date 
+
+# follow logs
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem logs $jobId # replace with job Id obtained from above
+
+# check status
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem status $jobId
+
+# stop job
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem stop $jobId
+
+# check status again
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem status $jobId
+```
+
 ## Worker Server
 
 The worker server can be started through either `go run cmd/server/main.go`, or `./bin/worker-server` if the binary was built. See `--help` for usage.
