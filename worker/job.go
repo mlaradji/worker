@@ -29,9 +29,8 @@ type Job struct {
 	exitCode   int32
 	finishedAt time.Time
 
-	mu          *sync.RWMutex // mu is a read-write mutex to synchronize job updates.
-	Done        chan struct{} // Done is closed after the job is done. It should block if and only if the job is currently running.
-	StopChannel chan struct{} // StopChannel can receive an empty struct, which would cause the job to stop if it's running. This channel is never closed.
+	mu    *sync.RWMutex        // mu is a read-write mutex to synchronize job updates.
+	group *ProcessGroupCommand // group is the process group command providing access to the executing command.
 }
 
 // GetJobStatus locks the job mutex for reading and returns the job's status.
@@ -65,21 +64,67 @@ func (job *Job) LogDirectory() string {
 	return filepath.Join("tmp", "jobs", job.Key.UserId, job.Key.JobId)
 }
 
-// Stop sends a signal to the StopChannel, which should trigger the job to stop. No error is returned if the job is not running.
-func (job *Job) Stop() {
-	logger := log.WithFields(log.Fields{"func": "Job.Stop", "jobKey": job.Key})
+// Done returns a channel that is closed at job end.
+func (job *Job) Done() <-chan struct{} {
+	return job.group.Done
+}
 
-	select {
-	case job.StopChannel <- struct{}{}:
-		logger.Debug("stopped job")
-	case <-job.Done:
-		logger.Debug("job was not stopped as it is not running")
+/* Start runs the job without blocking.*/
+func (job *Job) Start() error {
+	logger := log.WithFields(log.Fields{"func": "Job.Start", "jobKey": job.Key})
+
+	// open the logFile for writing, and pass it to the process group command
+	logFile, err := os.OpenFile(job.LogFilepath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.WithError(err).Error("unable to open file for writing")
+		return err
 	}
+
+	// start the process
+	if err := job.group.Start(logFile, logFile); err != nil {
+		logger.WithError(err).Error("unable to start process")
+		return err
+	}
+
+	// update the job status to RUNNING
+	job.mu.Lock()
+	job.jobStatus = pb.JobStatus_RUNNING
+	job.mu.Unlock()
+
+	go func() {
+		// close the logFile after the process is done
+		defer logFile.Close()
+
+		// wait for the command to finish
+		<-job.group.Done
+
+		// update job status and exit code
+		job.mu.Lock()
+		defer job.mu.Unlock()
+
+		job.finishedAt = job.group.GetDoneAt()
+		if job.group.GetStopped() {
+			job.jobStatus = pb.JobStatus_STOPPED
+		} else if job.group.GetExitCode() != 0 {
+			logger.WithError(err).Debug("process has failed")
+			job.jobStatus = pb.JobStatus_FAILED
+		} else {
+			job.jobStatus = pb.JobStatus_SUCCEEDED
+		}
+		job.exitCode = int32(job.group.GetExitCode())
+	}()
+
+	return nil
+}
+
+// Stop sends a signal to the process group to trigger the job to stop. This method blocks until the signal is sent or the job is not running.
+func (job *Job) Stop() {
+	go job.group.Stop()
 }
 
 // Log follows content of job's log file and sends to the returned channel. The returned channel is only closed after the log file is completely read and the job is not running.
 func (job *Job) Log() (<-chan []byte, error) {
-	logger := log.WithFields(log.Fields{"func": "Job.Log", "jobKey": job.Key, "LogFilepath": job.LogFilepath()})
+	logger := log.WithFields(log.Fields{"func": "Job.Log", "jobKey": job.Key, "logFilepath": job.LogFilepath()})
 
 	followDone := make(chan struct{}) // this is closed when the log file has been completely read and the job is not running
 
@@ -95,6 +140,7 @@ func (job *Job) Log() (<-chan []byte, error) {
 	// send lines to channel
 	go func() {
 		defer close(outputChan)
+		defer close(followDone)
 
 	ForLoop:
 		for {
@@ -104,8 +150,7 @@ func (job *Job) Log() (<-chan []byte, error) {
 				if !ok {
 					return
 				}
-			case <-job.Done:
-				close(followDone)
+			case <-job.group.Done:
 				break ForLoop
 			}
 		}
@@ -119,70 +164,17 @@ func (job *Job) Log() (<-chan []byte, error) {
 	return outputChan, nil
 }
 
-/* Start runs the job without blocking. */
-func (job *Job) Start() error {
-	logger := log.WithFields(log.Fields{"func": "Job.Start", "jobKey": job.Key})
-
-	// open the logFile for writing, and pass it to the process group command
-	logFile, err := os.OpenFile(job.LogFilepath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.WithError(err).Error("unable to open file for writing")
-		return err
-	}
-	group := NewProcessGroupCommand(job.StopChannel, logFile, job.Command, job.Args)
-
-	// start the process
-	if err := group.Start(); err != nil {
-		logger.WithError(err).Error("unable to start process")
-		return err
-	}
-
-	// update the job status to RUNNING
-	job.mu.Lock()
-	job.jobStatus = pb.JobStatus_RUNNING
-	job.mu.Unlock()
-
-	go func() {
-		// close the Done channel and logFile after the process is done
-		defer close(job.Done)
-		defer logFile.Close()
-
-		// Wait for the command to finish
-		stopped, err := group.Wait()
-		finishedAt := time.Now()
-
-		// update job status and exit code
-		job.mu.Lock()
-		defer job.mu.Unlock()
-
-		job.finishedAt = finishedAt
-		if stopped {
-			job.jobStatus = pb.JobStatus_STOPPED
-		} else if err != nil {
-			logger.WithError(err).Debug("process has failed")
-			job.jobStatus = pb.JobStatus_FAILED
-		} else {
-			job.jobStatus = pb.JobStatus_SUCCEEDED
-		}
-		exitCode := int32(group.Cmd.ProcessState.ExitCode())
-		job.exitCode = exitCode
-	}()
-
-	return nil
-}
-
 // NewJob generates a new Job object with status CREATED and exit code -1.
 func NewJob(userId string, command string, args []string) *Job {
 	jobId := uuid.New().String()
 	return &Job{
-		Key:         JobKey{UserId: userId, JobId: jobId},
-		Command:     command,
-		Args:        args,
-		CreatedAt:   time.Now(),
-		StopChannel: make(chan struct{}),
-		Done:        make(chan struct{}),
-		jobStatus:   pb.JobStatus_CREATED,
-		exitCode:    -1,
-		mu:          &sync.RWMutex{},
+		Key:       JobKey{UserId: userId, JobId: jobId},
+		Command:   command,
+		Args:      args,
+		CreatedAt: time.Now(),
+		jobStatus: pb.JobStatus_CREATED,
+		exitCode:  -1,
+		mu:        &sync.RWMutex{},
+		group:     NewProcessGroupCommand(command, args),
 	}
 }

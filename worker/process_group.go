@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -15,10 +16,11 @@ type ProcessGroupCommand struct {
 	Cmd  *exec.Cmd
 	Done chan struct{} // Done is a channel that is closed if and only if the process finished running or was stopped.
 
-	mu          *sync.RWMutex   // mu controls access to `stopped`.
+	mu          *sync.RWMutex   // mu controls access to `stopped` and `doneAt`.
 	stop        chan struct{}   // stop is a channel that can receive stop requests. It is initialized at process definition, and is closed after the process ends.
 	stopSenders *sync.WaitGroup // stopSenders controls access to the stop channel. It is initialized at process definition, and the stop channel is not closed until after this wait group is done.
-	stopped     bool            // stopped is true if and only if the process was killed because of a stop request.
+	stopped     bool            // Stopped is true if and only if the process was killed because of a stop request.
+	doneAt      time.Time       // doneAt is the time that the process stopped executing.
 }
 
 // GetExitCode returns the exit code of the process. It is equal to -1 if the job is still running or was stopped.
@@ -33,9 +35,20 @@ func (group *ProcessGroupCommand) GetStopped() bool {
 	return group.stopped
 }
 
-// Start starts the command.
-func (group *ProcessGroupCommand) Start() error {
+// GetDoneAt returns the value of `doneAt` in a thread-safe way.
+func (group *ProcessGroupCommand) GetDoneAt() time.Time {
+	group.mu.RLock()
+	defer group.mu.RUnlock()
+	return group.doneAt
+}
+
+// Start starts the command and logs its output to the attached files.
+func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWriter io.Writer) error {
 	logger := log.WithFields(log.Fields{"func": "ProcessGroupCommand.Start"})
+
+	// attach logs
+	group.Cmd.Stdout = stdoutLogWriter
+	group.Cmd.Stderr = stderrLogWriter
 
 	err := group.Cmd.Start()
 	if err != nil {
@@ -45,7 +58,14 @@ func (group *ProcessGroupCommand) Start() error {
 
 	// wait for the process to end, and then close the done channel
 	go func() {
-		defer close(group.Done)
+		// update doneAt and close done channel at end
+		defer func() {
+			doneAt := time.Now()
+			group.mu.Lock()
+			group.doneAt = doneAt
+			group.mu.Unlock()
+			close(group.Done)
+		}()
 
 		err := group.Cmd.Wait()
 		if err != nil {
@@ -84,7 +104,7 @@ func (group *ProcessGroupCommand) Start() error {
 	return nil
 }
 
-// Stop stops the command if it is running.
+// Stop stops the command if it is running. This method blocks until the signal is sent or the job is not running.
 func (group *ProcessGroupCommand) Stop() {
 	// add this function to the wait group of stop senders
 	// This accomplishes two things:
@@ -104,8 +124,9 @@ func (group *ProcessGroupCommand) Stop() {
 }
 
 // NewProcessGroupCommand returns a new ProcessGroupCommand that can execute `name` with `args`. The STDOUT and STDERR output of the process will be written to `stdoutLogWriter` and `stderrLogWriter`, respectively.
-func NewProcessGroupCommand(name string, args []string, stdoutLogWriter io.Writer, stderrLogWriter io.Writer) *ProcessGroupCommand {
+func NewProcessGroupCommand(name string, args []string) *ProcessGroupCommand {
 	// ?: Command might buffer output, which means the client would receive log data in large chunks. Is this ideal?
+	// ?: Loggers should only be attached at job start?
 
 	cmd := exec.CommandContext(
 		context.Background(),
@@ -113,8 +134,6 @@ func NewProcessGroupCommand(name string, args []string, stdoutLogWriter io.Write
 		args...,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // make sure descendants are put in the same process group
-	cmd.Stdout = stdoutLogWriter
-	cmd.Stderr = stderrLogWriter
 
 	return &ProcessGroupCommand{
 		Cmd:         cmd,

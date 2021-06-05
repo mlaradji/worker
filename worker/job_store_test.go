@@ -25,7 +25,7 @@ func TestJobStopped(t *testing.T) {
 
 	// stop the job and wait for the job to end
 	job.Stop()
-	<-job.Done
+	<-job.Done()
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -47,7 +47,7 @@ func TestJobSucceeded(t *testing.T) {
 	// start the job and wait for it to finish
 	err = job.Start()
 	require.Nil(t, err)
-	<-job.Done
+	<-job.Done()
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -70,7 +70,7 @@ func TestJobFailed(t *testing.T) {
 	// start the job and wait for it to finish
 	err = job.Start()
 	require.Nil(t, err)
-	<-job.Done
+	<-job.Done()
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
@@ -94,7 +94,7 @@ func TestJobStartAfterLoad(t *testing.T) {
 	require.Nil(t, err)
 
 	loadedJob1.Start()
-	<-loadedJob1.Done
+	<-job.Done()
 
 	// load and check contents
 	loadedJob2, err := store.LoadJob(job.Key)
@@ -118,7 +118,7 @@ func TestJobStopAfterDone(t *testing.T) {
 	// start the job and wait for it to finish
 	err = job.Start()
 	require.Nil(t, err)
-	<-job.Done
+	<-job.Done()
 
 	// stop the job after the process ended
 	// this should not block
@@ -149,7 +149,7 @@ func TestJobMultiStop(t *testing.T) {
 	job.Stop()
 	job.Stop()
 	job.Stop()
-	<-job.Done
+	<-job.Done()
 
 	// load the job from store and check that the job information is correct
 	job, err = store.LoadJob(job.Key)
