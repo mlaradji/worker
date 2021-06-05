@@ -170,7 +170,7 @@ func main() {
 				logger.WithError(err).Fatal("failed while streaming logs")
 			}
 
-			fmt.Print(logRes.GetLog())
+			fmt.Print(string(logRes.GetLog()))
 		}
 
 		logger.Info("done streaming logs - job is not running")
