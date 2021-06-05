@@ -6,6 +6,10 @@ An API that allows authenticated clients to run arbitrary linux commands
 
 To build the gRPC server and CLI, run `make build`. This should output the binaries `bin/worker-server` and `bin/worker-cli`.
 
+To generate `pb`, run `make pb-clean` and then `make pb-gen`.
+
+To generate certificates, run `make tls-clean` and then `make tls-gen`.
+
 ## Worker Client
 
 The worker client can be started through either `go run cmd/cli/main.go`, or `./bin/worker-cli` if the binary was built. See `--help` for usage.
