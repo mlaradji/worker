@@ -23,6 +23,7 @@ type Job struct {
 	Command   string
 	Args      []string
 	CreatedAt time.Time
+	Done      chan struct{} // Done is a channel that's closed after the job process is done and the job is updated with the status.
 
 	// these fields can be changed, and should only be accessed through the Get methods
 	jobStatus  pb.JobStatus
@@ -64,11 +65,6 @@ func (job *Job) LogDirectory() string {
 	return filepath.Join("tmp", "jobs", job.Key.UserId, job.Key.JobId)
 }
 
-// Done returns a channel that is closed at job end.
-func (job *Job) Done() <-chan struct{} {
-	return job.group.Done
-}
-
 /* Start runs the job without blocking.*/
 func (job *Job) Start() error {
 	logger := log.WithFields(log.Fields{"func": "Job.Start", "jobKey": job.Key})
@@ -92,7 +88,8 @@ func (job *Job) Start() error {
 	job.mu.Unlock()
 
 	go func() {
-		// close the logFile after the process is done
+		// close the logFile and the Done channel after the process is done
+		defer close(job.Done)
 		defer logFile.Close()
 
 		// wait for the command to finish
@@ -117,7 +114,7 @@ func (job *Job) Start() error {
 	return nil
 }
 
-// Stop sends a signal to the process group to trigger the job to stop. This method blocks until the signal is sent or the job is not running.
+// Stop sends a signal to the process group to trigger the job to stop. This method does not block.
 func (job *Job) Stop() {
 	go job.group.Stop()
 }
@@ -140,7 +137,6 @@ func (job *Job) Log() (<-chan []byte, error) {
 	// send lines to channel
 	go func() {
 		defer close(outputChan)
-		defer close(followDone)
 
 	ForLoop:
 		for {
@@ -151,6 +147,7 @@ func (job *Job) Log() (<-chan []byte, error) {
 					return
 				}
 			case <-job.group.Done:
+				close(followDone)
 				break ForLoop
 			}
 		}
@@ -176,5 +173,6 @@ func NewJob(userId string, command string, args []string) *Job {
 		exitCode:  -1,
 		mu:        &sync.RWMutex{},
 		group:     NewProcessGroupCommand(command, args),
+		Done:      make(chan struct{}),
 	}
 }

@@ -43,7 +43,7 @@ func main() {
 	job.Stop() // stop the job. non-blocking
 
 	// wait until the job is done
-	<-job.Done()
+	<-job.Done
 	<-wait
 
 	log.Info("job is no longer running")

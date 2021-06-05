@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -16,11 +18,14 @@ type ProcessGroupCommand struct {
 	Cmd  *exec.Cmd
 	Done chan struct{} // Done is a channel that is closed if and only if the process finished running or was stopped.
 
-	mu          *sync.RWMutex   // mu controls access to `stopped` and `doneAt`.
-	stop        chan struct{}   // stop is a channel that can receive stop requests. It is initialized at process definition, and is closed after the process ends.
-	stopSenders *sync.WaitGroup // stopSenders controls access to the stop channel. It is initialized at process definition, and the stop channel is not closed until after this wait group is done.
-	stopped     bool            // Stopped is true if and only if the process was killed because of a stop request.
-	doneAt      time.Time       // doneAt is the time that the process stopped executing.
+	isDone      bool          // isDone is true if and only if the job has finished. It is also true if and only if the stop channel is closed.
+	mu          *sync.RWMutex // mu controls access to `stopped` and `doneAt`.
+	stop        chan struct{} // stop is a channel that can receive stop requests. It is initialized at process definition, and is closed after the process ends.
+	stopSenders *sync.WaitGroup
+	stopMutex   *sync.Mutex         // stopMutex controls access to the stop channel and to `isDone`. It is initialized at process definition, and the stop channel is not closed until after locking this.
+	group       *singleflight.Group // group ensures that only one stop command is running at a time.
+	stopped     bool                // Stopped is true if and only if the process was killed because of a stop request.
+	doneAt      time.Time           // doneAt is the time that the process stopped executing.
 }
 
 // GetExitCode returns the exit code of the process. It is equal to -1 if the job is still running or was stopped.
@@ -60,11 +65,11 @@ func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWrit
 	go func() {
 		// update doneAt and close done channel at end
 		defer func() {
+			close(group.Done)
 			doneAt := time.Now()
 			group.mu.Lock()
 			group.doneAt = doneAt
 			group.mu.Unlock()
-			close(group.Done)
 		}()
 
 		err := group.Cmd.Wait()
@@ -75,18 +80,19 @@ func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWrit
 
 	// close the stop channel after the job is done
 	go func() {
-		defer close(group.stop)
-
 		// wait for the job to finish
 		<-group.Done
 		// wait for any sending goroutines to finish before closing the channel
-		group.stopSenders.Wait()
+		group.stopMutex.Lock()
+		close(group.stop)
+		group.isDone = true
+		group.stopMutex.Unlock()
 	}()
 
 	// monitor the stop channel for stop requests
 	go func() {
 		select {
-		case <-group.Done: // the process ended; stop this goroutine
+		case <-group.Done: // the process ended
 			return
 		case <-group.stop:
 			err := syscall.Kill(-group.Cmd.Process.Pid, syscall.SIGKILL)
@@ -105,22 +111,38 @@ func (group *ProcessGroupCommand) Start(stdoutLogWriter io.Writer, stderrLogWrit
 }
 
 // Stop stops the command if it is running. This method blocks until the signal is sent or the job is not running.
-func (group *ProcessGroupCommand) Stop() {
-	// add this function to the wait group of stop senders
-	// This accomplishes two things:
-	//		1. If the process is currently running, but finishes before this Stop function finishes, the stop channel will only close after this function finishes.
-	//		2. If the process just stopped, and it is waiting for other instances of this Stop function to finish, then WaitGroup.Add will block until the process status was updated. This means that the Done channel will not block and so we avoid sending data to a closed channel.
-	group.stopSenders.Add(1)
-	defer group.stopSenders.Done()
+func (group *ProcessGroupCommand) Stop() bool {
+	logger := log.WithField("func", "ProcessGroupCommand.Stop")
 
-	select {
-	case <-group.Done:
-		log.WithField("func", "ProcessGroupCommand.Stop").Debug("job is not running")
-		return
-	case group.stop <- struct{}{}:
-		log.WithField("func", "ProcessGroupCommand.Stop").Debug("sent a stop request")
-		return
+	_, _, shared := group.group.Do("stop", func() (interface{}, error) {
+		// add this function to the wait group of stop senders and check if the job is done
+		// This accomplishes two things:
+		//		1. If the process is currently running, but finishes before this Stop function finishes, the stop channel will only close after this function finishes.
+		//		2. If the process just stopped, and it is waiting for other instances of this Stop function to finish, then WaitGroup.Add will block until the process status was updated. This means that isDone will be true and so we avoid sending data to a closed channel.
+		group.stopMutex.Lock()
+		defer group.stopMutex.Unlock()
+
+		if group.isDone {
+			logger.Debug("job is has already finished")
+			return struct{}{}, nil
+		}
+
+		select {
+		case <-group.Done:
+			break
+		case group.stop <- struct{}{}:
+			logger.Debug("sent a stop request")
+			break
+		}
+
+		return struct{}{}, nil
+	})
+
+	if shared {
+		logger.Debug("did not send a stop request as another request was already in progress")
 	}
+
+	return shared
 }
 
 // NewProcessGroupCommand returns a new ProcessGroupCommand that can execute `name` with `args`. The STDOUT and STDERR output of the process will be written to `stdoutLogWriter` and `stderrLogWriter`, respectively.
@@ -141,6 +163,8 @@ func NewProcessGroupCommand(name string, args []string) *ProcessGroupCommand {
 		mu:          &sync.RWMutex{},
 		stop:        make(chan struct{}),
 		stopSenders: &sync.WaitGroup{},
+		stopMutex:   &sync.Mutex{},
 		stopped:     false,
+		group:       &singleflight.Group{},
 	}
 }
