@@ -9,12 +9,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-var cipherSuites = []uint16{
-	tls.TLS_CHACHA20_POLY1305_SHA256,
-	tls.TLS_AES_256_GCM_SHA384,
-	tls.TLS_AES_128_GCM_SHA256,
-}
-
 // LoadTLSCertificate loads client certificate and CA.
 func LoadTLSCertificate(caCertPath string, clientCertPath string, clientKeyPath string) (tls.Certificate, *x509.CertPool, error) {
 	// load CA certificate
@@ -47,6 +41,6 @@ func MakeClientTLSCredentials(cert tls.Certificate, certPool *x509.CertPool) cre
 
 // MakeServerTLSCredentials generates server-side TLS configuration.
 func MakeServerTLSCredentials(cert tls.Certificate, certPool *x509.CertPool) credentials.TransportCredentials {
-	config := &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: certPool, CipherSuites: cipherSuites, MinVersion: tls.VersionTLS13}
+	config := &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: certPool, MinVersion: tls.VersionTLS13}
 	return credentials.NewTLS(config)
 }
