@@ -43,6 +43,14 @@ func clientIdFromContext(ctx context.Context) (ClientId, error) {
 		return ClientId{}, errors.New("invalid TLS credentials")
 	}
 
+	// check that VerifiedChains has the certificate
+	if len(tlsAuth.State.VerifiedChains) == 0 {
+		return ClientId{}, errors.New("no certificate chains in TLS state")
+	}
+	if len(tlsAuth.State.VerifiedChains[0]) == 0 {
+		return ClientId{}, errors.New("no certificate found in first chain in TLS state")
+	}
+
 	cert := tlsAuth.State.VerifiedChains[0][0]
 	clientId := ClientId{Issuer: cert.Issuer.ToRDNSequence().String(), Subject: cert.Subject.ToRDNSequence().String()}
 
