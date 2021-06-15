@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -120,7 +121,7 @@ func (job *Job) Stop() {
 }
 
 // Log follows content of job's log file and sends to the returned channel. The returned channel is only closed after the log file is completely read and the job is not running.
-func (job *Job) Log() (<-chan []byte, error) {
+func (job *Job) Log(ctx context.Context) (<-chan []byte, error) {
 	logger := log.WithFields(log.Fields{"func": "Job.Log", "jobKey": job.Key, "logFilepath": job.LogFilepath()})
 
 	followDone := make(chan struct{}) // this is closed when the log file has been completely read and the job is not running
@@ -138,23 +139,34 @@ func (job *Job) Log() (<-chan []byte, error) {
 	go func() {
 		defer close(outputChan)
 
+		keepReading := false // keepReading is set to `true` when we want to continue reading after the follow is done.
+
 	ForLoop:
 		for {
 			select {
 			case chunk, ok := <-logChannel:
 				outputChan <- chunk
 				if !ok {
-					return
+					break ForLoop
 				}
+
 			case <-job.group.Done:
-				close(followDone)
+				keepReading = true
+				break ForLoop
+
+			case <-ctx.Done():
 				break ForLoop
 			}
 		}
 
-		// send remaining contents
-		for chunk := range logChannel {
-			outputChan <- chunk
+		// tell the log follower to stop following
+		close(followDone)
+
+		if keepReading {
+			// send remaining contents
+			for chunk := range logChannel {
+				outputChan <- chunk
+			}
 		}
 	}()
 

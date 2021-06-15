@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -25,7 +26,7 @@ func main() {
 	}
 
 	// get log channel
-	outputChan, err := job.Log()
+	outputChan, err := job.Log(context.Background())
 	if err != nil {
 		log.Fatal("unable to follow job logs")
 	}

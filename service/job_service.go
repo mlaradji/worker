@@ -169,7 +169,7 @@ func (server *JobServer) JobLogsStream(req *pb.JobLogsRequest, stream pb.JobServ
 		return status.Error(codes.Internal, "job is invalid")
 	}
 
-	logChannel, err := job.Log()
+	logChannel, err := job.Log(stream.Context())
 	if err != nil {
 		logger.WithError(err).Error("unable to follow logs")
 		return status.Error(codes.Internal, "server unable to follow job logs")

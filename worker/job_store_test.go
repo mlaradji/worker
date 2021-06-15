@@ -1,6 +1,7 @@
 package worker_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -185,6 +186,8 @@ func TestJobMultiStop(t *testing.T) {
 func TestJobFollowLogShort(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
+
 	userId := "me"
 	store := worker.NewJobStore()
 
@@ -199,7 +202,7 @@ func TestJobFollowLogShort(t *testing.T) {
 	require.NoError(t, err)
 
 	// get log channel
-	outputChan, err := job.Log()
+	outputChan, err := job.Log(ctx)
 	require.NoError(t, err)
 
 	actualOutput := []byte{}
@@ -213,6 +216,8 @@ func TestJobFollowLogShort(t *testing.T) {
 // TestJobFollowLogLong executes a long process and checks that the log output is as expected.
 func TestJobFollowLogLong(t *testing.T) {
 	t.Parallel()
+
+	ctx := context.Background()
 
 	userId := "me"
 	store := worker.NewJobStore()
@@ -238,7 +243,7 @@ func TestJobFollowLogLong(t *testing.T) {
 	require.NoError(t, err)
 
 	// get log channel
-	outputChan, err := job.Log()
+	outputChan, err := job.Log(ctx)
 	require.NoError(t, err)
 
 	actualOutput := []byte{}
