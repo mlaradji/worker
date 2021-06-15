@@ -9,15 +9,15 @@ import (
 // ServerStreamWithContext implements grpc.ServerStream, and allows one to replace the context.
 type ServerStreamWithContext struct {
 	grpc.ServerStream
-	NewContext context.Context // NewContext
+	ctx context.Context
 }
 
-// Context returns NewContext, the new attached context.
+// Context returns the attached context.
 func (sswc *ServerStreamWithContext) Context() context.Context {
-	return sswc.NewContext
+	return sswc.ctx
 }
 
-// NewServerStreamWithContext returns a new ServerStreamWithContext, which attaches the new context to the stream.
+// NewServerStreamWithContext returns a new ServerStreamWithContext, which attaches the passed context to the stream.
 func NewServerStreamWithContext(ctx context.Context, ss grpc.ServerStream) *ServerStreamWithContext {
-	return &ServerStreamWithContext{ServerStream: ss, NewContext: ctx}
+	return &ServerStreamWithContext{ServerStream: ss, ctx: ctx}
 }
