@@ -86,7 +86,7 @@ func main() {
 	// start listening
 	listener, err := net.Listen("tcp", Config.Address)
 	if err != nil {
-		logger.WithError(err).Fatal("unable to listen on address")
+		logger.WithError(err).WithField("address", Config.Address).Fatal("unable to listen on address")
 	}
 	logger.Info("started listening")
 

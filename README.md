@@ -4,7 +4,34 @@ An API that allows authenticated clients to run arbitrary linux commands
 
 ## Build
 
-To build the gRPC server, run `make build`. This should output the binary `bin/worker-server` binary.
+To build the gRPC server and CLI, run `make build`. This should output the binaries `bin/worker-server` and `bin/worker-cli`.
+
+To generate `pb`, run `make pb-clean` and then `make pb-gen`.
+
+To generate certificates, run `make tls-clean` and then `make tls-gen`.
+
+## Worker Client
+
+The worker client can be started through either `go run cmd/cli/main.go`, or `./bin/worker-cli` if the binary was built. See `--help` for usage.
+
+### Example
+
+```sh
+# job id will be printed
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem start -- watch date 
+
+# follow logs
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem logs $jobId # replace with job Id obtained from above
+
+# check status
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem status $jobId
+
+# stop job
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem stop $jobId
+
+# check status again
+./bin/worker-cli --debug --cert=certs/client2/cert.pem --key=certs/client2/key.pem --ca=certs/ca1/cert.pem status $jobId
+```
 
 ## Worker Server
 
